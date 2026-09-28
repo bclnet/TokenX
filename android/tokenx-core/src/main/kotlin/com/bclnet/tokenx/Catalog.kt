@@ -1,0 +1,103 @@
+/*
+ * Catalog.kt
+ * TokenX
+ *
+ * The opinionated part: which providers exist, which models each one
+ * offers, what they cost, and the profiles an app asks for. Nothing here is
+ * stored; the database only holds keys, a few settings and usage.
+ */
+package com.bclnet.tokenx
+
+enum class ProviderKind(val id: String, val displayName: String, val needsKey: Boolean = true) {
+    ANTHROPIC("anthropic", "Anthropic"),
+    OPENAI("openai", "OpenAI"),
+    GEMINI("gemini", "Google Gemini"),
+    /** An OpenAI-compatible server on the local network (Ollama, LM Studio, vLLM); no key needed. */
+    LOCAL("local", "Local server", needsKey = false);
+
+    companion object { fun of(id: String?): ProviderKind? = entries.firstOrNull { it.id == id } }
+}
+
+/** How capable (and expensive) a model is; profiles ask for a tier, the catalog picks the model. */
+enum class ModelTier { FAST, BALANCED, BEST }
+
+data class ModelInfo(
+    val provider: ProviderKind,
+    val id: String,
+    val name: String,
+    val tier: ModelTier,
+    /** USD per million tokens. */
+    val inputPerMillion: Double,
+    val outputPerMillion: Double,
+    val contextTokens: Int,
+    val vision: Boolean = true,
+) {
+    /** Cost in micro-dollars for a usage, so the ledger can add integers. */
+    fun costMicros(promptTokens: Int, replyTokens: Int): Long = Math.round(promptTokens * inputPerMillion + replyTokens * outputPerMillion)
+}
+
+/** What an app asks for. A profile names an intent, not a model; the catalog and the active provider decide what runs. */
+enum class Profile(val id: String) {
+    /** A character talking to a person: short replies, low effort, warm. */
+    CHARACTER("character"),
+    /** General assistance: longer, careful answers. */
+    ASSISTANT("assistant"),
+    /** Cheap and quick: classification, extraction, short rewrites. */
+    FAST("fast"),
+    /** Requests that include images. */
+    VISION("vision");
+
+    val tier: ModelTier get() = if (this == FAST) ModelTier.FAST else ModelTier.BEST
+
+    /** Thinking effort hint for providers that support it (Anthropic's `output_config.effort`). */
+    val effort: String? get() = when (this) { CHARACTER, FAST -> "low"; ASSISTANT, VISION -> "high" }
+
+    val maxTokens: Int get() = when (this) { CHARACTER -> 400; FAST -> 1024; ASSISTANT, VISION -> 4096 }
+
+    val temperature: Double? get() = when (this) { CHARACTER -> 0.9; FAST -> 0.2; ASSISTANT, VISION -> null }
+
+    val needsVision: Boolean get() = this == VISION
+
+    companion object { fun of(id: String?): Profile? = entries.firstOrNull { it.id == id } }
+}
+
+object Catalog {
+    /** Anthropic: prices and ids as of the 2026 model table. */
+    val anthropic = listOf(
+        ModelInfo(ProviderKind.ANTHROPIC, "claude-opus-5", "Claude Opus 5", ModelTier.BEST, 5.0, 25.0, 1_000_000),
+        ModelInfo(ProviderKind.ANTHROPIC, "claude-sonnet-5", "Claude Sonnet 5", ModelTier.BALANCED, 2.0, 10.0, 1_000_000),
+        ModelInfo(ProviderKind.ANTHROPIC, "claude-haiku-4-5", "Claude Haiku 4.5", ModelTier.FAST, 1.0, 5.0, 200_000),
+    )
+    val openai = listOf(
+        ModelInfo(ProviderKind.OPENAI, "gpt-5", "GPT-5", ModelTier.BEST, 1.25, 10.0, 400_000),
+        ModelInfo(ProviderKind.OPENAI, "gpt-5-mini", "GPT-5 mini", ModelTier.BALANCED, 0.25, 2.0, 400_000),
+        ModelInfo(ProviderKind.OPENAI, "gpt-5-nano", "GPT-5 nano", ModelTier.FAST, 0.05, 0.4, 400_000),
+    )
+    val gemini = listOf(
+        ModelInfo(ProviderKind.GEMINI, "gemini-2.5-pro", "Gemini 2.5 Pro", ModelTier.BEST, 1.25, 10.0, 1_000_000),
+        ModelInfo(ProviderKind.GEMINI, "gemini-2.5-flash", "Gemini 2.5 Flash", ModelTier.BALANCED, 0.3, 2.5, 1_000_000),
+        ModelInfo(ProviderKind.GEMINI, "gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite", ModelTier.FAST, 0.1, 0.4, 1_000_000),
+    )
+    /** A local server serves whatever model is loaded; the id is the settings' `localModel`. */
+    val local = listOf(ModelInfo(ProviderKind.LOCAL, "local", "Local model", ModelTier.BALANCED, 0.0, 0.0, 32_000, vision = false))
+
+    fun models(provider: ProviderKind): List<ModelInfo> = when (provider) {
+        ProviderKind.ANTHROPIC -> anthropic; ProviderKind.OPENAI -> openai; ProviderKind.GEMINI -> gemini; ProviderKind.LOCAL -> local
+    }
+
+    val all: List<ModelInfo> get() = ProviderKind.entries.flatMap { models(it) }
+
+    fun model(id: String): ModelInfo? = all.firstOrNull { it.id == id }
+
+    /** The model a provider runs for a profile: the profile's tier, or the nearest one the provider has. */
+    fun model(profile: Profile, provider: ProviderKind): ModelInfo {
+        val models = models(provider)
+        val order = when (profile.tier) {
+            ModelTier.FAST -> listOf(ModelTier.FAST, ModelTier.BALANCED, ModelTier.BEST)
+            ModelTier.BALANCED -> listOf(ModelTier.BALANCED, ModelTier.BEST, ModelTier.FAST)
+            ModelTier.BEST -> listOf(ModelTier.BEST, ModelTier.BALANCED, ModelTier.FAST)
+        }
+        for (tier in order) models.firstOrNull { it.tier == tier && (!profile.needsVision || it.vision) }?.let { return it }
+        return models[0]
+    }
+}

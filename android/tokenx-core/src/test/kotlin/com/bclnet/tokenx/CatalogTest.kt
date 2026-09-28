@@ -1,0 +1,47 @@
+package com.bclnet.tokenx
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class CatalogTest {
+    @Test fun everyProviderHasEveryTierOrFallsBack() {
+        for (provider in ProviderKind.entries) for (profile in Profile.entries) {
+            val model = Catalog.model(profile, provider)
+            assertEquals(provider, model.provider)
+            if (provider == ProviderKind.LOCAL) assertFalse(model.vision)
+        }
+        assertEquals("claude-opus-5", Catalog.model(Profile.CHARACTER, ProviderKind.ANTHROPIC).id)
+        assertEquals("claude-haiku-4-5", Catalog.model(Profile.FAST, ProviderKind.ANTHROPIC).id)
+        assertEquals(ModelTier.FAST, Catalog.model(Profile.FAST, ProviderKind.OPENAI).tier)
+        assertEquals(ProviderKind.GEMINI, Catalog.model("gemini-2.5-flash")?.provider)
+        assertNull(Catalog.model("nope"))
+    }
+
+    @Test fun costAndProfiles() {
+        val opus = Catalog.model("claude-opus-5")!!
+        assertEquals(5_000_000L, opus.costMicros(1_000_000, 0))
+        assertEquals(7500L, opus.costMicros(1000, 100))
+        assertEquals("low", Profile.CHARACTER.effort)
+        assertEquals(4096, Profile.ASSISTANT.maxTokens)
+        assertTrue(Profile.VISION.needsVision)
+        assertFalse(ProviderKind.LOCAL.needsKey)
+    }
+
+    @Test fun chatRequestEstimate() {
+        val r = ChatRequest(system = "a".repeat(40), messages = listOf(ChatMessage.user("b".repeat(32))))
+        assertEquals(20, r.estimatedPromptTokens)
+    }
+
+    @Test fun miniJsonRoundTrip() {
+        val text = """{"a":[1,2.5,"x\n\"y\""],"b":{"c":true,"d":null},"e":-3}"""
+        val parsed = MiniJson.parse(text) as Map<*, *>
+        assertEquals(listOf(1.0, 2.5, "x\n\"y\""), parsed["a"])
+        assertEquals(true, parsed.obj("b")?.get("c"))
+        assertEquals(-3, parsed.int("e"))
+        assertEquals("""{"a":[1,2.5,"x\n\"y\""],"b":{"c":true,"d":null},"e":-3}""", MiniJson.stringify(parsed))
+        assertNull(MiniJson.parse("{bad"))
+    }
+}
