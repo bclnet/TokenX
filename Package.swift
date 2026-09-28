@@ -3,6 +3,15 @@ import PackageDescription
 
 // TokenX: token management for apps that use AI models. The manifest stays at the
 // repository root so the package can be added by URL; sources live in ios/ next to android/.
+// SQLite comes with every Apple SDK (sqlite3.h and libsqlite3.tbd), so the system library must
+// not consult pkg-config there: a Homebrew sqlite would answer for the macOS host and drag its
+// macOS dylib into iOS, tvOS and watchOS link lines. Linux has no SDK copy, so it asks pkg-config.
+#if os(Linux)
+let csqlite: Target = .systemLibrary(name: "CSQLite", path: "ios/Sources/CSQLite", pkgConfig: "sqlite3", providers: [.apt(["libsqlite3-dev"])])
+#else
+let csqlite: Target = .systemLibrary(name: "CSQLite", path: "ios/Sources/CSQLite")
+#endif
+
 let package = Package(
     name: "TokenX",
     platforms: [.iOS(.v15), .macOS(.v12), .tvOS(.v15), .watchOS(.v8)],
@@ -15,7 +24,7 @@ let package = Package(
         .library(name: "TokenXUI", targets: ["TokenXUI"]),
     ],
     targets: [
-        .systemLibrary(name: "CSQLite", path: "ios/Sources/CSQLite", pkgConfig: "sqlite3", providers: [.apt(["libsqlite3-dev"]), .brew(["sqlite"])]),
+        csqlite,
         .target(name: "TokenX", dependencies: ["CSQLite"], path: "ios/Sources/TokenX"),
         .target(name: "TokenXApple", dependencies: ["TokenX"], path: "ios/Sources/TokenXApple"),
         .target(name: "TokenXUI", dependencies: ["TokenX", "TokenXApple"], path: "ios/Sources/TokenXUI"),
