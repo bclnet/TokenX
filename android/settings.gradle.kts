@@ -18,3 +18,4 @@ rootProject.name = "TokenX"
 
 include(":tokenx-core")
 include(":tokenx-android")
+include(":tokenx-compose")

@@ -68,7 +68,43 @@ try server.update { $0.dailyTokenCap = 200_000 }
 
 Queries for lists and options come from the server (`configuredProviders`,
 `ProviderKind.allCases`, `Catalog.models(for:)`, `usage(since:consumer:)`),
-so the app draws the UI and TokenX never does.
+so an app can draw its own UI. Most apps will not need to:
+
+### Bootstrap, model and UI pieces
+
+`TokenXApple` / `tokenx-android` build the standard server in one call, and
+the observable `TokenXModel` wraps it for screens:
+
+```swift
+let ai = TokenXModel(appId: "net.bcl.myapp")     // TokenXBootstrap.standard(appId:) underneath:
+                                                  // Application Support/<appId>/tokenx.sqlite, KeychainCipher(service: appId + ".tokenx")
+ai.settings, ai.configured, ai.usageToday, ai.recent, ai.lastError   // @Published
+ai.activate(.anthropic, key: text); ai.removeKey(for: .openai); ai.update { $0.dailyTokenCap = 200_000 }
+ai.setLocalServer(url: "http://host:11434/v1", model: "llama3"); ai.clearUsage()
+ai.isReady; ai.modelName(for: .character)         // "Claude Sonnet 5 (Anthropic)"
+ai.client.session(consumer: "bush", profile: .character, budget: 20_000)
+```
+
+```kotlin
+val ai = TokenXModel(context)                     // TokenX.standard(context): noBackupFilesDir/tokenx.sqlite, KeystoreCipher("<package>.tokenx")
+ai.settings; ai.configured; ai.usageToday; ai.recent; ai.lastError    // Compose state
+ai.activate(ProviderKind.ANTHROPIC, text); ai.removeKey(...); ai.update { it.copy(dailyTokenCap = 200_000) }
+```
+
+`TokenXUI` (SwiftUI) and `tokenx-compose` hold the pieces a host embeds in
+its own settings and status screens. They use platform controls in the
+host's theme and bring no navigation or branding:
+
+| piece | SwiftUI | Compose |
+| --- | --- | --- |
+| provider picker, key entry, local server URL and model, activate / remove key, prompt logging, today's usage, active model line | `TokenXSettingsSection(model:title:)` inside a `Form` | `TokenXSettings(model, modifier, title)` inside a `Column` |
+| today's and 30-day totals, recent requests, clear | `TokenXUsageView(model:)` | `TokenXUsage(model, modifier)` |
+| one line of totals | `TokenXUsageRow(totals:label:)` | `TokenXUsageRow(label, totals)` |
+| readiness indicator | `TokenXStatusBadge(model:)` | `TokenXStatusBadge(model)` |
+
+When a later TokenX needs something new from the user (another provider, a
+different setting), the section grows and the host app only updates the
+package.
 
 ### Secrets
 
@@ -114,9 +150,11 @@ opinion TokenX ships with.
 ```
 Package.swift             Swift manifest (root, so SwiftPM can add the package by URL)
 ios/Sources/TokenX        catalog, chat types, transport, providers, store, SQLiteStore, server, client
-ios/Sources/TokenXApple   KeychainCipher
+ios/Sources/TokenXApple   KeychainCipher, TokenXBootstrap.standard(appId:), TokenXModel (ObservableObject)
+ios/Sources/TokenXUI      TokenXSettingsSection, TokenXUsageView, TokenXUsageRow, TokenXStatusBadge (SwiftUI)
 ios/Sources/CSQLite       sqlite3 module map for Linux
 ios/Tests/TokenXTests     16 tests with a fake transport and an in-memory / temp SQLite store
 android/tokenx-core       Kotlin/JVM mirror (JDBC SQLite for desktop and tests), 16 tests
-android/tokenx-android    AndroidSqlDatabase, KeystoreCipher
+android/tokenx-android    AndroidSqlDatabase, KeystoreCipher, TokenX.standard(context)
+android/tokenx-compose    TokenXModel (Compose state), TokenXSettings, TokenXUsage, TokenXUsageRow, TokenXStatusBadge
 ```
