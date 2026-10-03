@@ -12,6 +12,7 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.bclnet.tokenx.Credit
 import com.bclnet.tokenx.Profile
 import com.bclnet.tokenx.ProviderKind
 import com.bclnet.tokenx.Settings
@@ -33,6 +34,12 @@ class TokenXModel(val server: TokenServer) {
         private set
     var usageToday: UsageTotals by mutableStateOf(UsageTotals())
         private set
+    /** Tokens left under the daily cap today; `null` when there is no cap. */
+    var remainingToday: Int? by mutableStateOf(null)
+        private set
+    /** The credit entered for the active provider and what is left of it; `null` when none was entered. */
+    var credit: Credit? by mutableStateOf(null)
+        private set
     var recent: List<UsageRecord> by mutableStateOf(emptyList())
         private set
     var lastError: String? by mutableStateOf(null)
@@ -51,6 +58,8 @@ class TokenXModel(val server: TokenServer) {
         settings = server.settings
         configured = server.configuredProviders
         usageToday = server.usageToday()
+        remainingToday = server.remainingToday()
+        credit = server.credit()
         recent = server.recentUsage(20)
     }
 
@@ -62,6 +71,9 @@ class TokenXModel(val server: TokenServer) {
     fun update(change: (Settings) -> Settings) = run { server.update(change) }
 
     fun setLocalServer(url: String?, model: String?) = run { server.update { it.copy(localBaseUrl = url?.takeIf { u -> u.isNotBlank() }, localModel = model?.takeIf { m -> m.isNotBlank() }) } }
+
+    /** The balance read off the provider's billing page, in dollars; `null` or zero forgets it. */
+    fun setCredit(dollars: Double?, provider: ProviderKind) = run { server.setCredit(dollars?.let { Math.round(it * 1_000_000) }, provider) }
 
     fun clearUsage() = run { server.store.deleteAll() }
 

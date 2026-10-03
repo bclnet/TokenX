@@ -26,6 +26,20 @@ interface KeyRepository {
     fun providersWithKeys(): List<ProviderKind>
 }
 
+/**
+ * A provider balance the user read off the provider's billing page, and what TokenX has charged that provider since.
+ * Providers do not report balances to API keys, so this is TokenX's own count: use of the key elsewhere is not seen.
+ */
+data class Credit(
+    /** The balance entered, in millionths of a dollar. */
+    val micros: Long,
+    val spentMicros: Long = 0,
+) {
+    val remainingMicros: Long get() = maxOf(0, micros - spentMicros)
+    val remainingUsd: Double get() = remainingMicros / 1_000_000.0
+    val totalUsd: Double get() = micros / 1_000_000.0
+}
+
 data class Settings(
     /** The provider requests go to; `null` until the app picks one. */
     val activeProvider: ProviderKind? = null,
@@ -37,6 +51,8 @@ data class Settings(
     val dailyTokenCap: Int? = null,
     /** Whether prompts and replies are kept with the usage rows (off by default). */
     val logPrompts: Boolean = false,
+    /** The balance entered per provider and the spend counted against it; empty until the user enters one. */
+    val credits: Map<ProviderKind, Credit> = emptyMap(),
 )
 
 interface SettingsRepository {
@@ -157,7 +173,12 @@ class SQLiteStore(private val db: SqlDatabase) : TokenStore {
                 "localModel" -> s.copy(localModel = value)
                 "dailyTokenCap" -> s.copy(dailyTokenCap = value?.toIntOrNull())
                 "logPrompts" -> s.copy(logPrompts = value == "1")
-                else -> s
+                else -> {
+                    // credit.<provider> = "<micros> <spentMicros>"
+                    val provider = if (key.startsWith("credit.")) ProviderKind.of(key.removePrefix("credit.")) else null
+                    val parts = value.orEmpty().split(" ").mapNotNull { it.toLongOrNull() }
+                    if (provider != null && parts.size == 2) s.copy(credits = s.credits + (provider to Credit(parts[0], parts[1]))) else s
+                }
             }
         }
         return s
@@ -165,7 +186,8 @@ class SQLiteStore(private val db: SqlDatabase) : TokenStore {
 
     override fun save(settings: Settings) {
         val pairs = listOf("activeProvider" to settings.activeProvider?.id, "localBaseURL" to settings.localBaseUrl, "localModel" to settings.localModel,
-            "dailyTokenCap" to settings.dailyTokenCap?.toString(), "logPrompts" to if (settings.logPrompts) "1" else "0")
+            "dailyTokenCap" to settings.dailyTokenCap?.toString(), "logPrompts" to if (settings.logPrompts) "1" else "0") +
+            ProviderKind.entries.map { "credit." + it.id to settings.credits[it]?.let { c -> "${c.micros} ${c.spentMicros}" } }
         for ((k, v) in pairs) db.execute("INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", listOf(k, v))
     }
 

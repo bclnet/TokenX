@@ -39,6 +39,10 @@ public final class TokenXModel: ObservableObject {
     @Published public private(set) var settings: Settings
     @Published public private(set) var configured: [ProviderKind] = []
     @Published public private(set) var usageToday = UsageTotals()
+    /// Tokens left under the daily cap today; `nil` when there is no cap.
+    @Published public private(set) var remainingToday: Int?
+    /// The credit entered for the active provider and what is left of it; `nil` when none was entered.
+    @Published public private(set) var credit: Credit?
     @Published public private(set) var recent: [UsageRecord] = []
     @Published public var lastError: String?
 
@@ -64,6 +68,8 @@ public final class TokenXModel: ObservableObject {
         settings = server.settings
         configured = server.configuredProviders
         usageToday = server.usageToday()
+        remainingToday = server.remainingToday()
+        credit = server.credit()
         recent = server.recentUsage(limit: 20)
     }
 
@@ -78,6 +84,11 @@ public final class TokenXModel: ObservableObject {
 
     public func setLocalServer(url: String?, model: String?) {
         run { try server.update { $0.localBaseURL = url?.isEmpty == false ? url : nil; $0.localModel = model?.isEmpty == false ? model : nil } }
+    }
+
+    /// The balance read off the provider's billing page, in dollars; `nil` or zero forgets it.
+    public func setCredit(_ dollars: Double?, for provider: ProviderKind) {
+        run { try server.setCredit(dollars.map { Int64(($0 * 1_000_000).rounded()) }, for: provider) }
     }
 
     public func clearUsage() { run { try server.store.deleteAll() } }

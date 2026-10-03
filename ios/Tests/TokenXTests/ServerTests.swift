@@ -77,10 +77,34 @@ final class ServerTests: XCTestCase {
         XCTAssertFalse(small.isExhausted)
         (result, _) = stream(small)
         if case .failure(let e)? = result { XCTAssertEqual(e, .budgetExhausted) } else { XCTFail() }
+        XCTAssertNil(server.remainingToday(), "no cap, nothing to count down")
+        try server.update { $0.dailyTokenCap = 100 }
+        XCTAssertEqual(server.remainingToday(), 66, "34 of 100 spent today")
+        try server.update { $0.dailyTokenCap = 20 }
+        XCTAssertEqual(server.remainingToday(), 0, "never below zero")
         try server.update { $0.dailyTokenCap = 36 }
         let other = client.session(consumer: "snoopy", profile: .fast)
         (result, _) = stream(other)
         if case .failure(let e)? = result { XCTAssertEqual(e, .dailyCapReached) } else { XCTFail("the day's 34 tokens plus this prompt exceed the cap") }
+    }
+
+    func testCreditCountsDownAndSurvivesClearingUsage() throws {
+        try server.activate(.anthropic, key: "k")
+        XCTAssertNil(server.credit(), "nothing entered yet")
+        try server.setCredit(50_000_000, for: .anthropic)
+        let session = TokenClient(broker: server).session(consumer: "bush", profile: .character)
+        _ = stream(session)
+        XCTAssertEqual(server.credit(), Credit(micros: 50_000_000, spentMicros: 350), "25 in at $5 and 9 out at $25 per million")
+        XCTAssertEqual(server.credit()?.remainingMicros, 49_999_650)
+        try server.store.deleteAll()
+        _ = stream(session)
+        XCTAssertEqual(server.credit()?.spentMicros, 700, "the count is the credit's own, not the usage log's")
+        XCTAssertNil(server.credit(for: .openai), "per provider")
+        try server.setCredit(100, for: .anthropic)
+        _ = stream(session)
+        XCTAssertEqual(server.credit()?.remainingMicros, 0, "never below zero")
+        try server.setCredit(nil, for: .anthropic)
+        XCTAssertNil(server.credit())
     }
 
     func testSwitchingProviderAndLoggingPrompts() throws {

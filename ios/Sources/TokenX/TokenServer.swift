@@ -38,6 +38,7 @@ public final class TokenServer: TokenBroker {
     public var settings: Settings { (try? store.settings()) ?? Settings() }
 
     public func update(_ change: (inout Settings) -> Void) throws {
+        lock.lock(); defer { lock.unlock() }
         var s = try store.settings()
         change(&s)
         try store.save(s)
@@ -78,6 +79,19 @@ public final class TokenServer: TokenBroker {
     }
 
     public func usageToday() -> UsageTotals { (try? store.totals(since: dayStart(), consumer: nil)) ?? UsageTotals() }
+    /// Records the balance the user read off the provider's billing page; spend is counted down from it. `nil` or zero forgets it.
+    public func setCredit(_ micros: Int64?, for provider: ProviderKind) throws {
+        try update { $0.credits[provider] = micros.flatMap { $0 > 0 ? Credit(micros: $0) : nil } }
+    }
+
+    /// The credit entered for a provider (the active one by default) and what is left of it; `nil` when none was entered.
+    public func credit(for provider: ProviderKind? = nil) -> Credit? {
+        let s = settings
+        return (provider ?? s.activeProvider).flatMap { s.credits[$0] }
+    }
+
+    /// Tokens left under the daily cap today; `nil` when there is no cap.
+    public func remainingToday() -> Int? { settings.dailyTokenCap.map { max(0, $0 - usageToday().totalTokens) } }
     public func usage(since date: Date, consumer: String? = nil) -> UsageTotals { (try? store.totals(since: date, consumer: consumer)) ?? UsageTotals() }
     public func recentUsage(limit: Int = 50, consumer: String? = nil) -> [UsageRecord] { (try? store.recent(limit: limit, consumer: consumer)) ?? [] }
 
@@ -121,6 +135,7 @@ public final class TokenServer: TokenBroker {
                                              costMicros: model.costMicros(promptTokens: usage.promptTokens, replyTokens: usage.replyTokens), stop: stop,
                                              prompt: settings.logPrompts ? request.messages.last?.text : nil, reply: settings.logPrompts ? text : nil)
                     _ = try? self.store.record(record)
+                    if record.costMicros > 0, settings.credits[kind] != nil { try? self.update { $0.credits[kind]?.spentMicros += record.costMicros } }
                 }
                 completion(.success(ChatReply(text: text, usage: usage, stop: stop)))
             }

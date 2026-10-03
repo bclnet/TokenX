@@ -25,11 +25,12 @@ class StoreTest {
             assertEquals(name, listOf(ProviderKind.ANTHROPIC), store.providersWithKeys())
 
             assertEquals(name, Settings(), store.settings())
-            val s = Settings(ProviderKind.LOCAL, "http://h:1/v1", "llama3", 5000, true)
+            val s = Settings(ProviderKind.LOCAL, "http://h:1/v1", "llama3", 5000, true, mapOf(ProviderKind.ANTHROPIC to Credit(50_000_000, 40_000)))
             store.save(s)
             assertEquals(name, s, store.settings())
             store.save(Settings(ProviderKind.ANTHROPIC))
             assertNull(name, store.settings().dailyTokenCap)
+            assertEquals(name, emptyMap<ProviderKind, Credit>(), store.settings().credits)
 
             val now = System.currentTimeMillis()
             val old = now - 2 * 86_400_000L

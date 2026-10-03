@@ -22,11 +22,11 @@ ios/Sources/TokenX          Catalog (ProviderKind anthropic/openai/gemini/local,
                             SQLiteStore (sqlite3 C API), TokenServer, TokenClient/TokenSession
 ios/Sources/TokenXApple     KeychainCipher (CryptoKit AES-GCM, key in Keychain), TokenXBootstrap.standard(appId:),
                             TokenXModel (ObservableObject over the server)
-ios/Sources/TokenXUI        SwiftUI pieces: TokenXSettingsSection, TokenXUsageView, TokenXUsageRow, TokenXStatusBadge
-ios/Tests/TokenXTests       16 tests with FakeTransport and canned SSE bodies
-android/tokenx-core         Kotlin/JVM mirror; MiniJson (no serialization dependency); JdbcSqlDatabase for tests; 16 tests
+ios/Sources/TokenXUI        SwiftUI pieces: TokenXSettingsSection, TokenXUsageView, TokenXUsageRow, TokenXRemainingView, TokenXStatusBadge
+ios/Tests/TokenXTests       17 tests with FakeTransport and canned SSE bodies
+android/tokenx-core         Kotlin/JVM mirror; MiniJson (no serialization dependency); JdbcSqlDatabase for tests; 17 tests
 android/tokenx-android      AndroidSqlDatabase, KeystoreCipher, TokenX.standard(context)
-android/tokenx-compose      TokenXModel (Compose state), TokenXSettings, TokenXUsage, TokenXUsageRow, TokenXStatusBadge
+android/tokenx-compose      TokenXModel (Compose state), TokenXSettings, TokenXUsage, TokenXUsageRow, TokenXRemaining, TokenXStatusBadge
 ```
 
 ## Build and test

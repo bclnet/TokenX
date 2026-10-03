@@ -29,7 +29,7 @@ class TokenServer(val store: TokenStore, val cipher: SecretCipher, val transport
 
     val settings: Settings get() = runCatching { store.settings() }.getOrDefault(Settings())
 
-    fun update(change: (Settings) -> Settings) { store.save(change(store.settings())) }
+    @Synchronized fun update(change: (Settings) -> Settings) { store.save(change(store.settings())) }
 
     fun setKey(key: String?, provider: ProviderKind) {
         val trimmed = key?.trim()
@@ -63,6 +63,14 @@ class TokenServer(val store: TokenStore, val cipher: SecretCipher, val transport
     }
 
     fun usageToday(): UsageTotals = runCatching { store.totals(dayStart(), null) }.getOrDefault(UsageTotals())
+    /** Records the balance the user read off the provider's billing page; spend is counted down from it. `null` or zero forgets it. */
+    fun setCredit(micros: Long?, provider: ProviderKind) = update { it.copy(credits = if (micros != null && micros > 0) it.credits + (provider to Credit(micros)) else it.credits - provider) }
+
+    /** The credit entered for a provider (the active one by default) and what is left of it; `null` when none was entered. */
+    fun credit(provider: ProviderKind? = null): Credit? = settings.let { s -> (provider ?: s.activeProvider)?.let { s.credits[it] } }
+
+    /** Tokens left under the daily cap today; `null` when there is no cap. */
+    fun remainingToday(): Int? = settings.dailyTokenCap?.let { maxOf(0, it - usageToday().totalTokens) }
     fun usage(sinceMillis: Long, consumer: String? = null): UsageTotals = runCatching { store.totals(sinceMillis, consumer) }.getOrDefault(UsageTotals())
     fun recentUsage(limit: Int = 50, consumer: String? = null): List<UsageRecord> = runCatching { store.recent(limit, consumer) }.getOrDefault(emptyList())
 
@@ -97,9 +105,11 @@ class TokenServer(val store: TokenStore, val cipher: SecretCipher, val transport
                 if (usage.promptTokens == 0) usage = usage.copy(promptTokens = request.estimatedPromptTokens)
                 if (usage.replyTokens == 0) usage = usage.copy(replyTokens = (reply.toByteArray(Charsets.UTF_8).size + 3) / 4)
                 runCatching {
+                    val cost = model.costMicros(usage.promptTokens, usage.replyTokens)
                     store.record(UsageRecord(consumer = consumer, profile = profile, provider = kind, model = model.id, promptTokens = usage.promptTokens, replyTokens = usage.replyTokens,
-                        costMicros = model.costMicros(usage.promptTokens, usage.replyTokens), stop = stop,
+                        costMicros = cost, stop = stop,
                         prompt = if (settings.logPrompts) request.messages.lastOrNull()?.text else null, reply = if (settings.logPrompts) reply else null))
+                    if (cost > 0 && settings.credits[kind] != null) update { s -> s.credits[kind]?.let { c -> s.copy(credits = s.credits + (kind to c.copy(spentMicros = c.spentMicros + cost))) } ?: s }
                 }
                 completion(Result.success(ChatReply(reply, usage, stop)))
             })

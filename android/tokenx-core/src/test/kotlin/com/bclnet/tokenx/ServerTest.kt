@@ -82,9 +82,33 @@ class ServerTest {
         assertFalse(small.isExhausted)
         result = stream(small).first
         assertTrue(result!!.exceptionOrNull() is TokenXException.BudgetExhausted)
+        assertNull(server.remainingToday())
+        server.update { it.copy(dailyTokenCap = 100) }
+        assertEquals(66, server.remainingToday())
+        server.update { it.copy(dailyTokenCap = 20) }
+        assertEquals(0, server.remainingToday())
         server.update { it.copy(dailyTokenCap = 36) }
         result = stream(client.session("snoopy", Profile.FAST)).first
         assertTrue(result!!.exceptionOrNull() is TokenXException.DailyCapReached)
+    }
+
+    @Test fun creditCountsDownAndSurvivesClearingUsage() {
+        server.activate(ProviderKind.ANTHROPIC, "k")
+        assertNull(server.credit())
+        server.setCredit(50_000_000, ProviderKind.ANTHROPIC)
+        val session = TokenClient(server).session("bush", Profile.CHARACTER)
+        stream(session)
+        assertEquals(Credit(50_000_000, 350), server.credit())
+        assertEquals(49_999_650L, server.credit()?.remainingMicros)
+        server.store.deleteAll()
+        stream(session)
+        assertEquals(700L, server.credit()?.spentMicros)
+        assertNull(server.credit(ProviderKind.OPENAI))
+        server.setCredit(100, ProviderKind.ANTHROPIC)
+        stream(session)
+        assertEquals(0L, server.credit()?.remainingMicros)
+        server.setCredit(null, ProviderKind.ANTHROPIC)
+        assertNull(server.credit())
     }
 
     @Test fun switchingProviderAndLoggingPrompts() {

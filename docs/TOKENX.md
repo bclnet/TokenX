@@ -54,7 +54,7 @@ The store holds only:
 | table | rows |
 | --- | --- |
 | `keys` | provider → API key ciphertext |
-| `settings` | active provider, local server URL and model, daily token cap, whether prompts are logged |
+| `settings` | active provider, local server URL and model, daily token cap, whether prompts are logged, the credit entered per provider |
 | `usage` | one row per request: time, consumer, profile, provider, model, prompt and reply tokens, cost in micro-dollars, stop reason, optional prompt and reply text |
 
 ```swift
@@ -63,6 +63,9 @@ try server.activate(.anthropic, key: keyFromTheUser)    // stores the key encryp
 server.isReady                                           // a provider is active and has what it needs
 server.model(for: .character)                            // what would run right now
 server.usageToday(), server.recentUsage(limit: 50)       // for the usage screen
+server.remainingToday()                                  // tokens left under the daily cap; nil without one
+try server.setCredit(50_000_000, for: .anthropic)        // the balance from the provider's billing page, in micro-dollars
+server.credit()?.remainingMicros                         // that balance minus what TokenX has charged the provider since
 try server.update { $0.dailyTokenCap = 200_000 }
 ```
 
@@ -100,6 +103,7 @@ host's theme and bring no navigation or branding:
 | provider picker, key entry, local server URL and model, activate / remove key, prompt logging, today's usage, active model line | `TokenXSettingsSection(model:title:)` inside a `Form` | `TokenXSettings(model, modifier, title)` inside a `Column` |
 | today's and 30-day totals, recent requests, clear | `TokenXUsageView(model:)` | `TokenXUsage(model, modifier)` |
 | one line of totals | `TokenXUsageRow(totals:label:)` | `TokenXUsageRow(label, totals)` |
+| what is left, for a main screen: the credit entered counted down by this app's spend, else tokens remaining under the daily cap, else today's totals | `TokenXRemainingView(model:)` | `TokenXRemaining(model, modifier)` |
 | readiness indicator | `TokenXStatusBadge(model:)` | `TokenXStatusBadge(model)` |
 
 When a later TokenX needs something new from the user (another provider, a
@@ -139,6 +143,10 @@ opinion TokenX ships with.
 - **Daily cap**: `Settings.dailyTokenCap` across every consumer; checked
   against today's usage plus the request's estimated prompt before sending.
 - **Session budget**: per `TokenSession`, checked the same way.
+- **Credit**: providers do not report balances to API keys, so the user enters the
+  balance from the provider's billing page (`Settings.credits`, per provider) and each
+  recorded request adds its cost to the credit's own `spentMicros`. It is an estimate
+  from catalog prices, sees only this app's use of the key, and survives clearing usage.
 - **Usage** is recorded once per successful request with the provider's
   reported tokens (estimated when a provider reports none). Failed requests
   cost nothing.
@@ -151,10 +159,10 @@ opinion TokenX ships with.
 Package.swift             Swift manifest (root, so SwiftPM can add the package by URL)
 ios/Sources/TokenX        catalog, chat types, transport, providers, store, SQLiteStore, server, client
 ios/Sources/TokenXApple   KeychainCipher, TokenXBootstrap.standard(appId:), TokenXModel (ObservableObject)
-ios/Sources/TokenXUI      TokenXSettingsSection, TokenXUsageView, TokenXUsageRow, TokenXStatusBadge (SwiftUI)
+ios/Sources/TokenXUI      TokenXSettingsSection, TokenXUsageView, TokenXUsageRow, TokenXRemainingView, TokenXStatusBadge (SwiftUI)
 ios/Sources/CSQLite       sqlite3 module map for Linux
 ios/Tests/TokenXTests     16 tests with a fake transport and an in-memory / temp SQLite store
 android/tokenx-core       Kotlin/JVM mirror (JDBC SQLite for desktop and tests), 16 tests
 android/tokenx-android    AndroidSqlDatabase, KeystoreCipher, TokenX.standard(context)
-android/tokenx-compose    TokenXModel (Compose state), TokenXSettings, TokenXUsage, TokenXUsageRow, TokenXStatusBadge
+android/tokenx-compose    TokenXModel (Compose state), TokenXSettings, TokenXUsage, TokenXUsageRow, TokenXRemaining, TokenXStatusBadge
 ```

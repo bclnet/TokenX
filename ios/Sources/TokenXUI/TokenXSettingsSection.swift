@@ -18,6 +18,7 @@ public struct TokenXSettingsSection: View {
     private let title: String
     @State private var provider: ProviderKind = .anthropic
     @State private var key = ""
+    @State private var credit = ""
     @State private var localURL = ""
     @State private var localModel = ""
 
@@ -40,6 +41,14 @@ public struct TokenXSettingsSection: View {
                     .textInputAutocapitalization(.never)
                     #endif
                     .disableAutocorrection(true)
+                HStack {
+                    TextField(creditPrompt, text: $credit)
+                        #if os(iOS) || os(tvOS)
+                        .keyboardType(.decimalPad)
+                        #endif
+                    Button("Set") { model.setCredit(creditAmount, for: provider); credit = "" }
+                        .buttonStyle(.borderless).disabled(creditAmount == nil)
+                }
             } else {
                 TextField("Server URL, e.g. http://192.168.1.20:11434/v1", text: $localURL)
                     #if os(iOS) || os(tvOS)
@@ -75,9 +84,16 @@ public struct TokenXSettingsSection: View {
 
     private var isActive: Bool { model.settings.activeProvider == provider && key.isEmpty && (!provider.needsKey || model.hasKey(provider)) }
 
+    private var creditAmount: Double? { Double(credit.replacingOccurrences(of: ",", with: ".")).flatMap { $0 >= 0 ? $0 : nil } }
+
+    private var creditPrompt: String {
+        if let c = model.settings.credits[provider] { return String(format: "≈ $%.2f left; enter a new balance", c.remainingUSD) }
+        return "Credit balance in $ (optional)"
+    }
+
     private var footer: String {
         if let name = model.modelName(for: .character), model.isReady { return "Characters answer with \(name)." }
-        return "Pick a provider and enter its API key. Keys are stored encrypted on this device."
+        return "Pick a provider and enter its API key. Keys are stored encrypted on this device. Enter the balance from the provider's billing page to see what is left; it counts this app's use only."
     }
 }
 
@@ -95,6 +111,37 @@ public struct TokenXUsageRow: View {
             Text(String(format: "%d requests · %d tokens · $%.4f", totals.requests, totals.totalTokens, totals.costUSD))
                 .font(.caption.monospacedDigit()).foregroundColor(.secondary)
         }
+    }
+}
+
+/// What is left, for a main screen: the provider credit the user entered counted down by this app's spend,
+/// else tokens remaining under the daily cap, else today's usage (the settings line). The host calls
+/// `model.refresh()` after a request.
+public struct TokenXRemainingView: View {
+    @ObservedObject private var model: TokenXModel
+
+    public init(model: TokenXModel) { self.model = model }
+
+    public var body: some View {
+        if let credit = model.credit {
+            meter("AI credit left", String(format: "≈ $%.2f of $%.2f", credit.remainingUSD, credit.totalUSD), Double(credit.remainingMicros) / Double(max(credit.micros, 1)))
+        } else if let left = model.remainingToday, let cap = model.settings.dailyTokenCap {
+            meter("AI left today", "\(left.formatted()) of \(cap.formatted()) tokens", Double(left) / Double(max(cap, 1)))
+        } else {
+            TokenXUsageRow(totals: model.usageToday, label: "AI today").font(.caption)
+        }
+    }
+
+    private func meter(_ label: String, _ value: String, _ fraction: Double) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(label)
+                Spacer()
+                Text(value).monospacedDigit().foregroundColor(fraction > 0 ? .secondary : .red)
+            }
+            ProgressView(value: min(max(fraction, 0), 1)).tint(fraction > 0 ? .accentColor : .red)
+        }
+        .font(.caption)
     }
 }
 

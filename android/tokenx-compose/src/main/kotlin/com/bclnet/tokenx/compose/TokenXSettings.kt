@@ -15,15 +15,18 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -35,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.bclnet.tokenx.Profile
@@ -48,6 +52,7 @@ import java.util.Date
 fun TokenXSettings(model: TokenXModel, modifier: Modifier = Modifier, title: String? = "AI provider") {
     var provider by remember { mutableStateOf(model.settings.activeProvider ?: ProviderKind.ANTHROPIC) }
     var key by remember { mutableStateOf("") }
+    var credit by remember { mutableStateOf("") }
     var localUrl by remember { mutableStateOf(model.settings.localBaseUrl ?: "") }
     var localModel by remember { mutableStateOf(model.settings.localModel ?: "") }
     var menu by remember { mutableStateOf(false) }
@@ -64,6 +69,13 @@ fun TokenXSettings(model: TokenXModel, modifier: Modifier = Modifier, title: Str
         if (provider.needsKey) {
             OutlinedTextField(value = key, onValueChange = { key = it }, label = { Text(if (model.hasKey(provider)) "API key (stored; enter to replace)" else "API key") },
                 singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+            val amount = credit.replace(',', '.').toDoubleOrNull()?.takeIf { it >= 0 }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(value = credit, onValueChange = { credit = it }, singleLine = true, modifier = Modifier.weight(1f),
+                    label = { Text(model.settings.credits[provider]?.let { "≈ $%.2f left; enter a new balance".format(it.remainingUsd) } ?: "Credit balance in $ (optional)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                TextButton(onClick = { model.setCredit(amount, provider); credit = "" }, enabled = amount != null) { Text("Set") }
+            }
         } else {
             OutlinedTextField(value = localUrl, onValueChange = { localUrl = it }, label = { Text("Server URL, e.g. http://192.168.1.20:11434/v1") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = localModel, onValueChange = { localModel = it }, label = { Text("Model name, e.g. llama3") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -85,7 +97,7 @@ fun TokenXSettings(model: TokenXModel, modifier: Modifier = Modifier, title: Str
         }
         TokenXUsageRow("Today", model.usageToday)
         val name = model.modelName(Profile.CHARACTER)
-        Text(if (model.isReady && name != null) "Characters answer with $name." else "Pick a provider and enter its API key. Keys are stored encrypted on this device.",
+        Text(if (model.isReady && name != null) "Characters answer with $name." else "Pick a provider and enter its API key. Keys are stored encrypted on this device. Enter the balance from the provider's billing page to see what is left; it counts this app's use only.",
             style = MaterialTheme.typography.bodySmall)
         model.lastError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
     }
@@ -99,6 +111,35 @@ fun TokenXUsageRow(label: String, totals: UsageTotals, modifier: Modifier = Modi
     Row(modifier.fillMaxWidth()) {
         Text(label, Modifier.weight(1f))
         Text("%d requests · %d tokens · $%.4f".format(totals.requests, totals.totalTokens, totals.costUsd), style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+/**
+ * What is left, for a main screen: the provider credit the user entered counted down by this app's spend,
+ * else tokens remaining under the daily cap, else today's usage (the settings line). The host calls
+ * `model.refresh()` after a request.
+ */
+@Composable
+fun TokenXRemaining(model: TokenXModel, modifier: Modifier = Modifier) {
+    val credit = model.credit
+    val cap = model.settings.dailyTokenCap
+    val left = model.remainingToday
+    when {
+        credit != null -> Meter("AI credit left", "≈ $%.2f of $%.2f".format(credit.remainingUsd, credit.totalUsd), credit.remainingMicros.toFloat() / maxOf(credit.micros, 1), modifier)
+        cap != null && left != null -> Meter("AI left today", "%,d of %,d tokens".format(left, cap), left.toFloat() / maxOf(cap, 1), modifier)
+        else -> ProvideTextStyle(MaterialTheme.typography.bodySmall) { TokenXUsageRow("AI today", model.usageToday, modifier) }
+    }
+}
+
+@Composable
+private fun Meter(label: String, value: String, fraction: Float, modifier: Modifier) {
+    val color = if (fraction > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+    Column(modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth()) {
+            Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+            Text(value, style = MaterialTheme.typography.bodySmall, color = if (fraction > 0) MaterialTheme.colorScheme.onSurfaceVariant else color)
+        }
+        LinearProgressIndicator(progress = { fraction.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp), color = color)
     }
 }
 

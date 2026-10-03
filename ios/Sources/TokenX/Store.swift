@@ -28,6 +28,20 @@ public protocol KeyRepository {
     func providersWithKeys() throws -> [ProviderKind]
 }
 
+/// A provider balance the user read off the provider's billing page, and what TokenX has charged that provider since.
+/// Providers do not report balances to API keys, so this is TokenX's own count: use of the key elsewhere is not seen.
+public struct Credit: Equatable, Codable {
+    /// The balance entered, in millionths of a dollar.
+    public var micros: Int64
+    public var spentMicros: Int64
+
+    public init(micros: Int64, spentMicros: Int64 = 0) { self.micros = micros; self.spentMicros = spentMicros }
+
+    public var remainingMicros: Int64 { max(0, micros - spentMicros) }
+    public var remainingUSD: Double { Double(remainingMicros) / 1_000_000 }
+    public var totalUSD: Double { Double(micros) / 1_000_000 }
+}
+
 public struct Settings: Equatable, Codable {
     /// The provider requests go to; `nil` until the app picks one.
     public var activeProvider: ProviderKind?
@@ -39,9 +53,11 @@ public struct Settings: Equatable, Codable {
     public var dailyTokenCap: Int?
     /// Whether prompts and replies are kept with the usage rows (off by default).
     public var logPrompts: Bool
+    /// The balance entered per provider and the spend counted against it; empty until the user enters one.
+    public var credits: [ProviderKind: Credit]
 
-    public init(activeProvider: ProviderKind? = nil, localBaseURL: String? = nil, localModel: String? = nil, dailyTokenCap: Int? = nil, logPrompts: Bool = false) {
-        self.activeProvider = activeProvider; self.localBaseURL = localBaseURL; self.localModel = localModel; self.dailyTokenCap = dailyTokenCap; self.logPrompts = logPrompts
+    public init(activeProvider: ProviderKind? = nil, localBaseURL: String? = nil, localModel: String? = nil, dailyTokenCap: Int? = nil, logPrompts: Bool = false, credits: [ProviderKind: Credit] = [:]) {
+        self.activeProvider = activeProvider; self.localBaseURL = localBaseURL; self.localModel = localModel; self.dailyTokenCap = dailyTokenCap; self.logPrompts = logPrompts; self.credits = credits
     }
 }
 

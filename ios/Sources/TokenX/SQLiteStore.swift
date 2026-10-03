@@ -143,7 +143,11 @@ public final class SQLiteStore: TokenStore {
             case "localModel": s.localModel = value
             case "dailyTokenCap": s.dailyTokenCap = value.flatMap(Int.init)
             case "logPrompts": s.logPrompts = value == "1"
-            default: break
+            default:
+                // credit.<provider> = "<micros> <spentMicros>"
+                guard key.hasPrefix("credit."), let provider = ProviderKind(rawValue: String(key.dropFirst(7))) else { break }
+                let parts = (value ?? "").split(separator: " ").compactMap { Int64($0) }
+                if parts.count == 2 { s.credits[provider] = Credit(micros: parts[0], spentMicros: parts[1]) }
             }
         }
         return s
@@ -153,7 +157,7 @@ public final class SQLiteStore: TokenStore {
         let pairs: [(String, String?)] = [
             ("activeProvider", settings.activeProvider?.rawValue), ("localBaseURL", settings.localBaseURL), ("localModel", settings.localModel),
             ("dailyTokenCap", settings.dailyTokenCap.map(String.init)), ("logPrompts", settings.logPrompts ? "1" : "0"),
-        ]
+        ] + ProviderKind.allCases.map { ("credit." + $0.rawValue, settings.credits[$0].map { "\($0.micros) \($0.spentMicros)" }) }
         for (key, value) in pairs {
             try run("INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [key, value])
         }
