@@ -94,4 +94,4 @@ have to read the source to learn it, it belongs in the guide.
   need not end with a blank line.
 - Budget and daily-cap tests use exact thresholds (budget 36, cap 36); keep the fake
   usage numbers in step when changing accounting.
-- Local `master` in a checkout may be stale; work was pushed from `claude/tokenx`.
+- Work lands on `master` directly; feature branches are deleted once merged.
