@@ -26,11 +26,13 @@ class ProviderTest {
 
     @Test fun anthropicRequestAndStream() {
         val provider = AnthropicProvider()
-        val request = provider.request(chat, ProviderCall(Catalog.model("claude-opus-5")!!, "sk-test", profile = Profile.CHARACTER))
+        val request = provider.request(chat, ProviderCall(Catalog.model("claude-opus-5-5")!!, "sk-test", profile = Profile.CHARACTER))
         assertEquals(AnthropicProvider.ENDPOINT, request.url)
         assertEquals("sk-test", request.headers["x-api-key"])
+        assertEquals("server-side-fallback-2026-07-01", request.headers["anthropic-beta"])
         val body = request.bodyJson!!
-        assertEquals("claude-opus-5", body["model"])
+        assertEquals("claude-opus-5-5", body["model"])
+        assertEquals("default", body["fallbacks"])
         assertEquals(400, body.int("max_tokens"))
         assertEquals(true, body["stream"])
         assertEquals("You are a bush.", body["system"])
@@ -41,10 +43,44 @@ class ProviderTest {
         assertEquals("Ask, and the bush shall sing.", text)
         assertEquals(Usage(25, 9), done?.usage)
         assertEquals(StopReason.END, done?.stop)
-        val haiku = provider.request(chat, ProviderCall(Catalog.model("claude-haiku-4-5")!!, "k", profile = Profile.CHARACTER)).bodyJson!!
+        val haikuRequest = provider.request(chat, ProviderCall(Catalog.model("claude-haiku-4-5")!!, "k", profile = Profile.CHARACTER))
+        val haiku = haikuRequest.bodyJson!!
         assertEquals(0.9, haiku["temperature"])
         assertNull(haiku["output_config"])
-        try { provider.request(chat, ProviderCall(Catalog.model("claude-opus-5")!!, null, profile = Profile.FAST)); fail() } catch (e: TokenXException.MissingKey) {}
+        assertNull(haiku["fallbacks"])
+        assertNull(haikuRequest.headers["anthropic-beta"])
+        val sonnet = provider.request(chat, ProviderCall(Catalog.model("claude-sonnet-5-5")!!, "k", profile = Profile.ASSISTANT))
+        assertEquals("server-side-fallback-2026-07-01", sonnet.headers["anthropic-beta"])
+        assertEquals("default", sonnet.bodyJson!!["fallbacks"])
+        try { provider.request(chat, ProviderCall(Catalog.model("claude-opus-5-5")!!, null, profile = Profile.FAST)); fail() } catch (e: TokenXException.MissingKey) {}
+    }
+
+    @Test fun anthropicImagePartsAndJsonSchema() {
+        val provider = AnthropicProvider()
+        val schema = mapOf("type" to "object", "properties" to mapOf("ok" to mapOf("type" to "boolean")), "required" to listOf("ok"), "additionalProperties" to false)
+        val request = provider.request(
+            ChatRequest(messages = listOf(ChatMessage.user(listOf(ChatPart.Text("Photo 1"), ChatPart.Image("AAAA", "image/jpeg"), ChatPart.Text("Compare.")))), maxTokens = 8000, jsonSchema = schema),
+            ProviderCall(Catalog.model("claude-opus-5-5")!!, "k", profile = Profile.VISION),
+        )
+        val body = request.bodyJson!!
+        assertEquals(8000, body.int("max_tokens"))
+        val content = body.list("messages")!!.first().list("content")!!
+        assertEquals(listOf("text", "image", "text"), content.map { it.str("type") })
+        assertEquals("base64", content[1].obj("source").str("type"))
+        assertEquals("image/jpeg", content[1].obj("source").str("media_type"))
+        assertEquals("AAAA", content[1].obj("source").str("data"))
+        assertEquals("high", body.obj("output_config").str("effort"))
+        assertEquals("json_schema", body.obj("output_config").obj("format").str("type"))
+        assertEquals(listOf("ok"), body.obj("output_config").obj("format").obj("schema").list("required"))
+        val merged = AnthropicProvider.messages(listOf(ChatMessage.user("first"), ChatMessage.user(listOf(ChatPart.Image("BBBB", "image/png")))))
+        assertEquals(1, merged.size)
+        assertEquals(listOf("text", "image"), merged[0].list("content")!!.map { it.str("type") })
+    }
+
+    @Test fun anthropicReportsRefusalStop() {
+        val (text, done) = collect(AnthropicProvider(), Canned.anthropicRefusal)
+        assertEquals(StopReason.REFUSAL, done?.stop)
+        assertEquals("", text)
     }
 
     @Test fun anthropicMergesAdjacentRoles() {
@@ -65,6 +101,24 @@ class ProviderTest {
         val (text, done) = collect(provider, Canned.openai)
         assertEquals("Hello there", text)
         assertEquals(Usage(12, 2), done?.usage)
+    }
+
+    @Test fun openAIImagePartsAndJsonSchema() {
+        val provider = OpenAIProvider()
+        val request = provider.request(
+            ChatRequest(messages = listOf(ChatMessage.user(listOf(ChatPart.Text("What is this?"), ChatPart.Image("AAAA", "image/png")))), jsonSchema = mapOf("type" to "object")),
+            ProviderCall(Catalog.model("gpt-5")!!, "k", profile = Profile.VISION),
+        )
+        val body = request.bodyJson!!
+        val content = body.list("messages")!!.first().list("content")!!
+        assertEquals(listOf("text", "image_url"), content.map { it.str("type") })
+        assertEquals("data:image/png;base64,AAAA", content[1].obj("image_url").str("url"))
+        assertEquals("json_schema", body.obj("response_format").str("type"))
+        assertEquals("reply", body.obj("response_format").obj("json_schema").str("name"))
+        assertEquals("object", body.obj("response_format").obj("json_schema").obj("schema").str("type"))
+        val plain = provider.request(chat, ProviderCall(Catalog.model("gpt-5")!!, "k", profile = Profile.FAST)).bodyJson!!
+        assertEquals("hello", plain.list("messages")!![1].str("content"))
+        assertNull(plain["response_format"])
     }
 
     @Test fun localServerUsesBaseUrlAndNoKey() {
@@ -90,5 +144,21 @@ class ProviderTest {
         assertEquals("Woof.", text)
         assertEquals(Usage(7, 2), done?.usage)
         assertEquals(StopReason.END, done?.stop)
+    }
+
+    @Test fun geminiImagePartsAndJsonSchema() {
+        val provider = GeminiProvider()
+        val request = provider.request(
+            ChatRequest(messages = listOf(ChatMessage.user(listOf(ChatPart.Text("What is this?"), ChatPart.Image("AAAA", "image/webp")))), jsonSchema = mapOf("type" to "object")),
+            ProviderCall(Catalog.model("gemini-2.5-pro")!!, "g", profile = Profile.VISION),
+        )
+        val body = request.bodyJson!!
+        val parts = body.list("contents")!!.first().list("parts")!!
+        assertEquals("What is this?", parts[0].str("text"))
+        assertEquals("image/webp", parts[1].obj("inlineData").str("mimeType"))
+        assertEquals("AAAA", parts[1].obj("inlineData").str("data"))
+        assertEquals("application/json", body.obj("generationConfig").str("responseMimeType"))
+        val plain = provider.request(chat, ProviderCall(Catalog.model("gemini-2.5-pro")!!, "g", profile = Profile.FAST)).bodyJson!!
+        assertNull(plain.obj("generationConfig").str("responseMimeType"))
     }
 }

@@ -137,7 +137,7 @@ public final class TokenServer: TokenBroker {
                     _ = try? self.store.record(record)
                     if record.costMicros > 0, settings.credits[kind] != nil { try? self.update { $0.credits[kind]?.spentMicros += record.costMicros } }
                 }
-                completion(.success(ChatReply(text: text, usage: usage, stop: stop)))
+                completion(.success(ChatReply(text: text, usage: usage, stop: stop, model: model.id, provider: kind)))
             }
         })
     }

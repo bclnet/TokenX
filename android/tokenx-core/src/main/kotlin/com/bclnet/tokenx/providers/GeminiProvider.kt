@@ -8,6 +8,7 @@ package com.bclnet.tokenx.providers
 
 import com.bclnet.tokenx.ChatEvent
 import com.bclnet.tokenx.ChatMessage
+import com.bclnet.tokenx.ChatPart
 import com.bclnet.tokenx.ChatRequest
 import com.bclnet.tokenx.HttpRequest
 import com.bclnet.tokenx.MiniJson
@@ -31,11 +32,12 @@ class GeminiProvider : Provider {
     override fun request(chat: ChatRequest, call: ProviderCall): HttpRequest {
         val key = call.key?.takeIf { it.isNotEmpty() } ?: throw TokenXException.MissingKey(ProviderKind.GEMINI)
         val body = linkedMapOf<String, Any?>(
-            "contents" to chat.messages.map { mapOf("role" to (if (it.role == ChatMessage.Role.USER) "user" else "model"), "parts" to listOf(mapOf("text" to it.text))) },
+            "contents" to chat.messages.map { mapOf("role" to (if (it.role == ChatMessage.Role.USER) "user" else "model"), "parts" to parts(it)) },
         )
         chat.system?.takeIf { it.isNotEmpty() }?.let { body["systemInstruction"] = mapOf("parts" to listOf(mapOf("text" to it))) }
         val config = linkedMapOf<String, Any?>("maxOutputTokens" to (chat.maxTokens ?: call.maxTokens))
         (chat.temperature ?: call.profile.temperature)?.let { config["temperature"] = it }
+        if (chat.jsonSchema != null) config["responseMimeType"] = "application/json"
         body["generationConfig"] = config
         return HttpRequest("$BASE${call.model.id}:streamGenerateContent?alt=sse", headers = mapOf("Content-Type" to "application/json", "x-goog-api-key" to key, "Accept" to "text/event-stream"), body = MiniJson.stringify(body).toByteArray())
     }
@@ -55,5 +57,15 @@ class GeminiProvider : Provider {
         }
     }
 
-    companion object { const val BASE = "https://generativelanguage.googleapis.com/v1beta/models/" }
+    companion object {
+        const val BASE = "https://generativelanguage.googleapis.com/v1beta/models/"
+
+        /** Text parts and `inlineData` image parts. */
+        fun parts(message: ChatMessage): List<Map<String, Any?>> = message.contentParts.map { part ->
+            when (part) {
+                is ChatPart.Text -> mapOf("text" to part.text)
+                is ChatPart.Image -> mapOf("inlineData" to mapOf("mimeType" to part.mediaType, "data" to part.data))
+            }
+        }
+    }
 }

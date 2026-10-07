@@ -31,13 +31,26 @@ val session = TokenClient(server).session("bush", Profile.CHARACTER, budget = 20
 session.stream(ChatRequest(persona, listOf(ChatMessage.user("sing"))), { delta -> speak(delta) }) { result -> }
 ```
 
+```ts
+const session = new TokenClient(server).session('bush', 'character', 20_000);
+const reply = await session.stream({ system: persona, messages: [ChatMessage.user('sing')] }, (delta) => speak(delta));
+```
+
 - **Profile** names the intent, never the model: `character` (short, warm, low
   effort), `assistant` (careful, longer), `fast` (cheap and quick), `vision`.
 - **Consumer** is a free name for usage rows (an actor id, a screen).
 - **Budget** is the session's own token allowance. The server's daily cap
   applies on top. `remaining`, `spent` and `isExhausted` are on the session.
+- A message is text, or text and image parts: `ChatMessage.user(parts:)` with
+  `.text` and `.image(data:mediaType:)` (base64, no `data:` prefix). Image parts
+  are allowed on every profile; the catalog's `vision` flag picks a model that can
+  see them. Each image counts about 1,600 tokens in the estimate.
+- `ChatRequest.jsonSchema` asks for a reply that validates against a JSON schema;
+  the reply text is then the JSON document.
 - The reply streams as text deltas and ends with `Usage` (prompt and reply
-  tokens) and a `StopReason` (`end`, `maxTokens`, `refusal`, `other`).
+  tokens) and a `StopReason` (`end`, `maxTokens`, `refusal`, `other`). The
+  `ChatReply` also names the `model` and `provider` that answered, for the
+  consumer's records; consumers still never choose them.
 - Errors: `noProvider`, `missingKey`, `budgetExhausted`, `dailyCapReached`,
   `http(status, body)`, `transport`, `cancelled`.
 
@@ -84,7 +97,7 @@ let ai = TokenXModel(appId: "net.bcl.myapp")     // TokenXBootstrap.standard(app
 ai.settings, ai.configured, ai.usageToday, ai.recent, ai.lastError   // @Published
 ai.activate(.anthropic, key: text); ai.removeKey(for: .openai); ai.update { $0.dailyTokenCap = 200_000 }
 ai.setLocalServer(url: "http://host:11434/v1", model: "llama3"); ai.clearUsage()
-ai.isReady; ai.modelName(for: .character)         // "Claude Sonnet 5 (Anthropic)"
+ai.isReady; ai.modelName(for: .character)         // "Claude Opus 5.5 (Anthropic)"
 ai.client.session(consumer: "bush", profile: .character, budget: 20_000)
 ```
 
@@ -115,25 +128,29 @@ package.
 Keys are encrypted before they reach SQLite. The cipher is the platform's:
 `KeychainCipher` (TokenXApple) keeps an AES-GCM key in the Keychain, device
 only and not backed up; `KeystoreCipher` (tokenx-android) keeps it in the
-Android Keystore. `PlainCipher` exists for tests. The database itself lives
-in the app's private, no-backup storage.
+Android Keystore; `AesGcmCipher` (tokenx on npm) does AES-GCM over WebCrypto
+with a key the host supplies, such as a Worker secret or a value from a device
+secure store. `PlainCipher` exists for tests. The database itself lives in the
+app's private, no-backup storage.
 
 ### Providers
 
-Providers are plain HTTPS with server-sent events; no vendor SDKs, so Swift
-and Kotlin behave identically and the core is testable with a fake transport.
+Providers are plain HTTPS with server-sent events; no vendor SDKs, so Swift,
+Kotlin and TypeScript behave identically and the core is testable with a fake
+transport.
 
-| provider | endpoint | notes |
-| --- | --- | --- |
-| Anthropic | `POST /v1/messages`, `stream: true` | `output_config.effort` from the profile on the 5-generation models; sampling parameters are not sent there |
-| OpenAI | `POST /v1/chat/completions`, `stream: true`, `stream_options.include_usage` | |
-| Gemini | `POST /v1beta/models/{model}:streamGenerateContent?alt=sse` | |
-| local | an OpenAI-compatible server (Ollama, LM Studio, vLLM) at `Settings.localBaseURL`; no key | model name from `Settings.localModel` |
+| provider | endpoint | images | JSON schema | notes |
+| --- | --- | --- | --- | --- |
+| Anthropic | `POST /v1/messages`, `stream: true` | base64 image content blocks | `output_config.format` `{type: json_schema, schema}` | `output_config.effort` from the profile on the 5-generation models; sampling parameters are not sent there. Opus 5.5 and Sonnet 5.5 requests send `anthropic-beta: server-side-fallback-2026-07-01` and `"fallbacks": "default"` |
+| OpenAI | `POST /v1/chat/completions`, `stream: true`, `stream_options.include_usage` | `image_url` data URIs | `response_format` `json_schema` | |
+| Gemini | `POST /v1beta/models/{model}:streamGenerateContent?alt=sse` | `inlineData` parts | `responseMimeType: application/json` | |
+| local | an OpenAI-compatible server (Ollama, LM Studio, vLLM) at `Settings.localBaseURL`; no key | as OpenAI | as OpenAI | model name from `Settings.localModel` |
 
 ### Catalog and profiles
 
 The catalog lists three models per provider by tier (`fast`, `balanced`,
-`best`) with prices for the cost column. A profile asks for a tier; the
+`best`) with prices for the cost column; for Anthropic these are Claude Opus 5.5
+($4 / $20 per million tokens), Sonnet 5.5 ($2 / $10) and Haiku 4.5 ($1 / $5). A profile asks for a tier; the
 active provider's model of that tier serves it (or the nearest tier the
 provider has). Editing the catalog is a code change on purpose: it is the
 opinion TokenX ships with.
@@ -161,8 +178,16 @@ ios/Sources/TokenX        catalog, chat types, transport, providers, store, SQLi
 ios/Sources/TokenXApple   KeychainCipher, TokenXBootstrap.standard(appId:), TokenXModel (ObservableObject)
 ios/Sources/TokenXUI      TokenXSettingsSection, TokenXUsageView, TokenXUsageRow, TokenXRemainingView, TokenXStatusBadge (SwiftUI)
 ios/Sources/CSQLite       sqlite3 module map for Linux
-ios/Tests/TokenXTests     16 tests with a fake transport and an in-memory / temp SQLite store
-android/tokenx-core       Kotlin/JVM mirror (JDBC SQLite for desktop and tests), 16 tests
+ios/Tests/TokenXTests     23 tests with a fake transport and an in-memory / temp SQLite store
+android/tokenx-core       Kotlin/JVM mirror (JDBC SQLite for desktop and tests), 23 tests
 android/tokenx-android    AndroidSqlDatabase, KeystoreCipher, TokenX.standard(context)
 android/tokenx-compose    TokenXModel (Compose state), TokenXSettings, TokenXUsage, TokenXUsageRow, TokenXRemaining, TokenXStatusBadge
+js/                       TypeScript mirror, npm `tokenx`: src/*.ts file for file with ios/Sources/TokenX, fetch transport,
+                          async TokenStore, AesGcmCipher; no UI pieces; 22 vitest tests
 ```
+
+| platform | package | secrets |
+| --- | --- | --- |
+| iOS, macOS | Swift package `TokenX` (+ `TokenXApple`, `TokenXUI`) | Keychain-held AES-GCM key |
+| Android, JVM | Gradle modules `tokenx-core`, `tokenx-android`, `tokenx-compose` | Android Keystore AES-GCM key |
+| Node, Workers, React Native | npm `tokenx` (async store API, no UI pieces) | host-supplied AES-GCM key (`AesGcmCipher`) |

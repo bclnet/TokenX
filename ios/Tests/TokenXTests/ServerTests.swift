@@ -46,7 +46,7 @@ final class ServerTests: XCTestCase {
         XCTAssertEqual(try store.keyData(for: .anthropic), Data("sk-live".utf8.map { $0 ^ 0x2A }), "stored as ciphertext, trimmed")
         XCTAssertEqual(try server.key(for: .anthropic), "sk-live")
         XCTAssertTrue(server.isReady)
-        XCTAssertEqual(server.model(for: .character)?.id, "claude-opus-5")
+        XCTAssertEqual(server.model(for: .character)?.id, "claude-opus-5-5")
         let client = TokenClient(broker: server)
         let session = client.session(consumer: "bush", profile: .character, budget: 1000)
         let (result, deltas) = stream(session)
@@ -54,16 +54,18 @@ final class ServerTests: XCTestCase {
         XCTAssertEqual(reply.text, "Ask, and the bush shall sing.")
         XCTAssertEqual(deltas, ["Ask, ", "and the bush shall sing."])
         XCTAssertEqual(reply.usage, Usage(promptTokens: 25, replyTokens: 9))
+        XCTAssertEqual(reply.model, "claude-opus-5-5", "the reply says what answered")
+        XCTAssertEqual(reply.provider, .anthropic)
         XCTAssertEqual(session.spent, 34)
         XCTAssertEqual(session.remaining, 966)
         XCTAssertEqual(transport.requests.last?.headers["x-api-key"], "sk-live")
         let usage = server.usageToday()
         XCTAssertEqual(usage.requests, 1)
         XCTAssertEqual(usage.totalTokens, 34)
-        XCTAssertEqual(usage.costMicros, 25 * 5 + 9 * 25)
+        XCTAssertEqual(usage.costMicros, 25 * 4 + 9 * 20)
         let row = server.recentUsage().first!
         XCTAssertEqual(row.consumer, "bush")
-        XCTAssertEqual(row.model, "claude-opus-5")
+        XCTAssertEqual(row.model, "claude-opus-5-5")
         XCTAssertNil(row.prompt, "prompts are not logged by default")
     }
 
@@ -94,11 +96,11 @@ final class ServerTests: XCTestCase {
         try server.setCredit(50_000_000, for: .anthropic)
         let session = TokenClient(broker: server).session(consumer: "bush", profile: .character)
         _ = stream(session)
-        XCTAssertEqual(server.credit(), Credit(micros: 50_000_000, spentMicros: 350), "25 in at $5 and 9 out at $25 per million")
-        XCTAssertEqual(server.credit()?.remainingMicros, 49_999_650)
+        XCTAssertEqual(server.credit(), Credit(micros: 50_000_000, spentMicros: 280), "25 in at $4 and 9 out at $20 per million")
+        XCTAssertEqual(server.credit()?.remainingMicros, 49_999_720)
         try server.store.deleteAll()
         _ = stream(session)
-        XCTAssertEqual(server.credit()?.spentMicros, 700, "the count is the credit's own, not the usage log's")
+        XCTAssertEqual(server.credit()?.spentMicros, 560, "the count is the credit's own, not the usage log's")
         XCTAssertNil(server.credit(for: .openai), "per provider")
         try server.setCredit(100, for: .anthropic)
         _ = stream(session)
@@ -127,5 +129,23 @@ final class ServerTests: XCTestCase {
         let (result, _) = stream(TokenClient(broker: server).session(consumer: "x", profile: .character))
         if case .failure(let e)? = result { XCTAssertEqual(e, .http(status: 401, body: "{\"error\":{\"message\":\"invalid x-api-key\"}}")) } else { XCTFail() }
         XCTAssertEqual(server.usageToday().requests, 0, "failed requests are not charged")
+    }
+
+    func testRefusalIsAStopReasonNotAnError() throws {
+        try server.activate(.anthropic, key: "k")
+        transport.responses["api.anthropic.com"] = (200, Canned.anthropicRefusal)
+        let (result, _) = stream(TokenClient(broker: server).session(consumer: "x", profile: .vision))
+        XCTAssertEqual(try result?.get().stop, .refusal)
+        XCTAssertEqual(server.usageToday().requests, 1, "a refusal still used prompt tokens")
+    }
+
+    func testImagePartsCountAgainstBudget() throws {
+        try server.activate(.anthropic, key: "k")
+        let session = TokenClient(broker: server).session(consumer: "eye", profile: .vision, budget: 1000)
+        var result: Result<ChatReply, TokenXError>?
+        let request = ChatRequest(messages: [.user(parts: [.text("look"), .image(data: "AAAA", mediaType: "image/png")])])
+        session.send(request) { result = $0 }
+        if case .failure(let e)? = result { XCTAssertEqual(e, .budgetExhausted, "an image is about 1,600 tokens; the budget is 1,000") } else { XCTFail() }
+        XCTAssertTrue(transport.requests.isEmpty, "nothing was sent")
     }
 }

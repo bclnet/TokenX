@@ -49,6 +49,18 @@ enum Canned {
 
     """
 
+    static let anthropicRefusal = """
+    event: message_start
+    data: {"type":"message_start","message":{"id":"msg_2","type":"message","role":"assistant","usage":{"input_tokens":30,"output_tokens":0}}}
+
+    event: message_delta
+    data: {"type":"message_delta","delta":{"stop_reason":"refusal","stop_sequence":null},"usage":{"output_tokens":0}}
+
+    event: message_stop
+    data: {"type":"message_stop"}
+
+    """
+
     static let openai = """
     data: {"id":"c1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
 

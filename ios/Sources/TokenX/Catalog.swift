@@ -102,10 +102,10 @@ public enum Profile: String, CaseIterable, Codable {
 }
 
 public enum Catalog {
-    /// Anthropic: prices and ids as of the 2026 model table.
+    /// Anthropic: ids and prices from the 2026 model table (Claude Opus 5.5 / Sonnet 5.5 / Haiku 4.5).
     public static let anthropic: [ModelInfo] = [
-        ModelInfo(provider: .anthropic, id: "claude-opus-5", name: "Claude Opus 5", tier: .best, inputPerMillion: 5, outputPerMillion: 25, contextTokens: 1_000_000),
-        ModelInfo(provider: .anthropic, id: "claude-sonnet-5", name: "Claude Sonnet 5", tier: .balanced, inputPerMillion: 2, outputPerMillion: 10, contextTokens: 1_000_000),
+        ModelInfo(provider: .anthropic, id: "claude-opus-5-5", name: "Claude Opus 5.5", tier: .best, inputPerMillion: 4, outputPerMillion: 20, contextTokens: 1_000_000),
+        ModelInfo(provider: .anthropic, id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", tier: .balanced, inputPerMillion: 2, outputPerMillion: 10, contextTokens: 1_000_000),
         ModelInfo(provider: .anthropic, id: "claude-haiku-4-5", name: "Claude Haiku 4.5", tier: .fast, inputPerMillion: 1, outputPerMillion: 5, contextTokens: 200_000),
     ]
     public static let openai: [ModelInfo] = [

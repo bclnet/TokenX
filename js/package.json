@@ -1,0 +1,29 @@
+{
+  "name": "tokenx",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Token management for apps that use AI models: providers over plain HTTPS + SSE, a model catalog and profiles, encrypted keys, a usage ledger and caps. The TypeScript side of TokenX.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bclnet/TokenX.git",
+    "directory": "js"
+  },
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.0"
+  }
+}

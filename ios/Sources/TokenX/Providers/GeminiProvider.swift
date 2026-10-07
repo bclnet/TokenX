@@ -16,14 +16,25 @@ public struct GeminiProvider: Provider {
     public func request(_ chat: ChatRequest, call: ProviderCall) throws -> HttpRequest {
         guard let key = call.key, !key.isEmpty else { throw TokenXError.missingKey(.gemini) }
         var body: [String: Any] = [
-            "contents": chat.messages.map { ["role": $0.role == .user ? "user" : "model", "parts": [["text": $0.text]]] },
+            "contents": chat.messages.map { ["role": $0.role == .user ? "user" : "model", "parts": GeminiProvider.parts($0)] },
         ]
         if let system = chat.system, !system.isEmpty { body["systemInstruction"] = ["parts": [["text": system]]] }
         var config: [String: Any] = ["maxOutputTokens": chat.maxTokens ?? call.maxTokens]
         if let t = chat.temperature ?? call.profile.temperature { config["temperature"] = t }
+        if chat.jsonSchema != nil { config["responseMimeType"] = "application/json" }
         body["generationConfig"] = config
         let url = URL(string: GeminiProvider.base + call.model.id + ":streamGenerateContent?alt=sse")!
         return HttpRequest(url: url, headers: ["Content-Type": "application/json", "x-goog-api-key": key, "Accept": "text/event-stream"], body: try JSON.data(body))
+    }
+
+    /// Text parts and `inlineData` image parts.
+    static func parts(_ message: ChatMessage) -> [[String: Any]] {
+        message.contentParts.map { part in
+            switch part {
+            case .text(let t): return ["text": t]
+            case .image(let data, let mediaType): return ["inlineData": ["mimeType": mediaType, "data": data]]
+            }
+        }
     }
 
     public func makeParser() -> ProviderStreamParser { Parser() }

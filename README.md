@@ -24,6 +24,12 @@ Column { TokenXSettings(ai) }                          // in the app's settings 
 val session = ai.client.session("bush", Profile.CHARACTER, budget = 20_000)
 ```
 
+```ts
+const server = new TokenServer(store, new AesGcmCipher(secret));   // tokenx (npm); the store API is async
+const session = new TokenClient(server).session('bush', 'character', 20_000);
+const reply = await session.stream({ system: persona, messages: [ChatMessage.user('sing')] }, (delta) => speak(delta));
+```
+
 `docs/TOKENX.md` explains the two halves, the profiles, the store and the
 policy. Providers are Anthropic, OpenAI, Google Gemini and any
 OpenAI-compatible local server, all over plain HTTPS and server-sent events
@@ -34,11 +40,17 @@ not rows; the SQLite database holds only keys, a few settings and usage.
 | --- | --- | --- |
 | iOS, macOS | Swift package `TokenX` (+ `TokenXApple` bootstrap and model, `TokenXUI` SwiftUI pieces), sources in `ios/` | Keychain-held AES-GCM key |
 | Android, JVM | Gradle modules `tokenx-core`, `tokenx-android`, `tokenx-compose` in `android/` | Android Keystore AES-GCM key |
+| Node, Workers, React Native | npm `tokenx`, sources in `js/` (async store API, no UI pieces) | host-supplied AES-GCM key (`AesGcmCipher`) |
 
 The UI packages hold embeddable pieces, not screens: a settings section, a
 usage view and a status badge in the host's own theme. When TokenX changes
 what it needs from the user, the host app picks it up by updating the
 package.
+
+Messages carry text and inline images (`ChatMessage.user(parts:)`; the
+`vision` flag in the catalog picks a model that can see them), a request can
+ask for a reply that fits a JSON schema (`ChatRequest.jsonSchema`), and the
+reply says which model and provider answered.
 
 TokenX knows nothing about the apps or libraries that use it. Adapters live
 with the consumers (for example JsonMind's `TokenXMindProvider`).
@@ -46,8 +58,9 @@ with the consumers (for example JsonMind's `TokenXMindProvider`).
 ## Building
 
 ```
-swift test                                 # Linux (needs libsqlite3-dev) or macOS; 16 tests
-cd android && ./gradlew build              # 16 JVM tests plus the Android and Compose libraries
+swift test                                 # Linux (needs libsqlite3-dev) or macOS; 23 tests
+cd android && ./gradlew build              # 23 JVM tests plus the Android and Compose libraries
+cd js && npm ci && npm test                # 22 tests on a fake transport with canned SSE bodies
 ```
 
 ## License

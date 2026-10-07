@@ -7,11 +7,35 @@
  */
 package com.bclnet.tokenx
 
-data class ChatMessage(val role: Role, val text: String) {
+/** One piece of a message: text, or an image carried inline as base64. */
+sealed class ChatPart {
+    data class Text(val text: String) : ChatPart()
+    /** `mediaType` is the MIME type (`image/jpeg`, `image/png`, `image/webp`, `image/gif`); `data` is base64 with no `data:` prefix. */
+    data class Image(val data: String, val mediaType: String) : ChatPart()
+
+    companion object {
+        fun joinedText(parts: List<ChatPart>): String = parts.filterIsInstance<Text>().joinToString("\n") { it.text }
+    }
+}
+
+data class ChatMessage(
+    val role: Role,
+    /** Plain text; when `parts` is set this is the concatenated text, kept for logging and estimates. */
+    val text: String,
+    /** Multimodal content; `null` means the message is `text` alone. */
+    val parts: List<ChatPart>? = null,
+) {
     enum class Role(val id: String) { USER("user"), ASSISTANT("assistant") }
+
+    /** The parts providers send: `parts` when set, else the text alone. */
+    val contentParts: List<ChatPart> get() = parts ?: listOf(ChatPart.Text(text))
+    val imageCount: Int get() = parts?.count { it is ChatPart.Image } ?: 0
+
     companion object {
         fun user(text: String) = ChatMessage(Role.USER, text)
         fun assistant(text: String) = ChatMessage(Role.ASSISTANT, text)
+        /** A user message made of text and image parts. */
+        fun user(parts: List<ChatPart>) = ChatMessage(Role.USER, ChatPart.joinedText(parts), parts)
     }
 }
 
@@ -21,12 +45,19 @@ data class ChatRequest(
     /** Overrides the profile's defaults when set. */
     val maxTokens: Int? = null,
     val temperature: Double? = null,
+    /**
+     * Ask the provider for a reply that validates against this JSON schema (Anthropic `output_config.format`,
+     * OpenAI `response_format`, Gemini `responseMimeType`). The reply text is then the JSON document.
+     * Providers that cannot enforce the schema still ask for JSON.
+     */
+    val jsonSchema: Map<String, Any?>? = null,
 ) {
-    /** Roughly four characters per token; used before a request to check budgets. */
+    /** Roughly four characters per token, plus about 1,600 per image; used before a request to check budgets. */
     val estimatedPromptTokens: Int
         get() {
             val chars = (system?.toByteArray(Charsets.UTF_8)?.size ?: 0) + messages.sumOf { it.text.toByteArray(Charsets.UTF_8).size + 8 }
-            return (chars + 3) / 4
+            val images = messages.sumOf { it.imageCount }
+            return (chars + 3) / 4 + images * 1600
         }
 }
 
@@ -45,7 +76,8 @@ sealed class ChatEvent {
     data class Done(val usage: Usage, val stop: StopReason) : ChatEvent()
 }
 
-data class ChatReply(val text: String, val usage: Usage, val stop: StopReason)
+/** The reply; `model` and `provider` say what answered, for the consumer's records (consumers still never choose them). */
+data class ChatReply(val text: String, val usage: Usage, val stop: StopReason, val model: String, val provider: ProviderKind)
 
 sealed class TokenXException(message: String) : Exception(message) {
     object NoProvider : TokenXException("no AI provider is configured")

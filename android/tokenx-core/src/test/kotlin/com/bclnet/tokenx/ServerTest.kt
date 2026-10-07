@@ -52,23 +52,25 @@ class ServerTest {
         assertFalse(String(store.keyData(ProviderKind.ANTHROPIC)!!) == "sk-live")
         assertEquals("sk-live", server.key(ProviderKind.ANTHROPIC))
         assertTrue(server.isReady)
-        assertEquals("claude-opus-5", server.model(Profile.CHARACTER)?.id)
+        assertEquals("claude-opus-5-5", server.model(Profile.CHARACTER)?.id)
         val session = TokenClient(server).session("bush", Profile.CHARACTER, budget = 1000)
         val (result, deltas) = stream(session)
         val reply = result!!.getOrThrow()
         assertEquals("Ask, and the bush shall sing.", reply.text)
         assertEquals(listOf("Ask, ", "and the bush shall sing."), deltas)
         assertEquals(Usage(25, 9), reply.usage)
+        assertEquals("claude-opus-5-5", reply.model)
+        assertEquals(ProviderKind.ANTHROPIC, reply.provider)
         assertEquals(34, session.spent)
         assertEquals(966, session.remaining)
         assertEquals("sk-live", transport.requests.last().headers["x-api-key"])
         val usage = server.usageToday()
         assertEquals(1, usage.requests)
         assertEquals(34, usage.totalTokens)
-        assertEquals(25L * 5 + 9L * 25, usage.costMicros)
+        assertEquals(25L * 4 + 9L * 20, usage.costMicros)
         val row = server.recentUsage().first()
         assertEquals("bush", row.consumer)
-        assertEquals("claude-opus-5", row.model)
+        assertEquals("claude-opus-5-5", row.model)
         assertNull(row.prompt)
     }
 
@@ -98,11 +100,11 @@ class ServerTest {
         server.setCredit(50_000_000, ProviderKind.ANTHROPIC)
         val session = TokenClient(server).session("bush", Profile.CHARACTER)
         stream(session)
-        assertEquals(Credit(50_000_000, 350), server.credit())
-        assertEquals(49_999_650L, server.credit()?.remainingMicros)
+        assertEquals(Credit(50_000_000, 280), server.credit())
+        assertEquals(49_999_720L, server.credit()?.remainingMicros)
         server.store.deleteAll()
         stream(session)
-        assertEquals(700L, server.credit()?.spentMicros)
+        assertEquals(560L, server.credit()?.spentMicros)
         assertNull(server.credit(ProviderKind.OPENAI))
         server.setCredit(100, ProviderKind.ANTHROPIC)
         stream(session)
@@ -131,5 +133,22 @@ class ServerTest {
         val (result, _) = stream(TokenClient(server).session("x", Profile.CHARACTER))
         assertEquals(TokenXException.Http(401, """{"error":{"message":"invalid x-api-key"}}"""), result!!.exceptionOrNull())
         assertEquals(0, server.usageToday().requests)
+    }
+
+    @Test fun refusalIsAStopReasonNotAnError() {
+        server.activate(ProviderKind.ANTHROPIC, "k")
+        transport.responses["api.anthropic.com"] = 200 to Canned.anthropicRefusal
+        val (result, _) = stream(TokenClient(server).session("x", Profile.VISION))
+        assertEquals(StopReason.REFUSAL, result!!.getOrThrow().stop)
+        assertEquals(1, server.usageToday().requests)
+    }
+
+    @Test fun imagePartsCountAgainstBudget() {
+        server.activate(ProviderKind.ANTHROPIC, "k")
+        val session = TokenClient(server).session("eye", Profile.VISION, budget = 1000)
+        var result: Result<ChatReply>? = null
+        session.send(ChatRequest(messages = listOf(ChatMessage.user(listOf(ChatPart.Text("look"), ChatPart.Image("AAAA", "image/png")))))) { result = it }
+        assertTrue(result!!.exceptionOrNull() is TokenXException.BudgetExhausted)
+        assertTrue(transport.requests.isEmpty())
     }
 }

@@ -62,10 +62,10 @@ enum class Profile(val id: String) {
 }
 
 object Catalog {
-    /** Anthropic: prices and ids as of the 2026 model table. */
+    /** Anthropic: ids and prices from the 2026 model table (Claude Opus 5.5 / Sonnet 5.5 / Haiku 4.5). */
     val anthropic = listOf(
-        ModelInfo(ProviderKind.ANTHROPIC, "claude-opus-5", "Claude Opus 5", ModelTier.BEST, 5.0, 25.0, 1_000_000),
-        ModelInfo(ProviderKind.ANTHROPIC, "claude-sonnet-5", "Claude Sonnet 5", ModelTier.BALANCED, 2.0, 10.0, 1_000_000),
+        ModelInfo(ProviderKind.ANTHROPIC, "claude-opus-5-5", "Claude Opus 5.5", ModelTier.BEST, 4.0, 20.0, 1_000_000),
+        ModelInfo(ProviderKind.ANTHROPIC, "claude-sonnet-5-5", "Claude Sonnet 5.5", ModelTier.BALANCED, 2.0, 10.0, 1_000_000),
         ModelInfo(ProviderKind.ANTHROPIC, "claude-haiku-4-5", "Claude Haiku 4.5", ModelTier.FAST, 1.0, 5.0, 200_000),
     )
     val openai = listOf(

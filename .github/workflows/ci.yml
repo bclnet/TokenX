@@ -29,3 +29,20 @@ jobs:
       - name: Build and test
         working-directory: android
         run: ./gradlew --no-daemon build
+
+  node:
+    name: TypeScript package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: js/package-lock.json
+      - name: Install, typecheck and test
+        working-directory: js
+        run: |
+          npm ci
+          npm run typecheck
+          npm test

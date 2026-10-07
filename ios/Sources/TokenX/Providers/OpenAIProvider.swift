@@ -18,7 +18,7 @@ public struct OpenAIProvider: Provider {
     public func request(_ chat: ChatRequest, call: ProviderCall) throws -> HttpRequest {
         var messages: [[String: Any]] = []
         if let system = chat.system, !system.isEmpty { messages.append(["role": "system", "content": system]) }
-        messages += chat.messages.map { ["role": $0.role.rawValue, "content": $0.text] }
+        messages += chat.messages.map { ["role": $0.role.rawValue, "content": OpenAIProvider.content($0)] }
         var body: [String: Any] = [
             "model": call.model.id,
             "stream": true,
@@ -31,6 +31,9 @@ public struct OpenAIProvider: Provider {
             body["max_tokens"] = chat.maxTokens ?? call.maxTokens
             if let t = chat.temperature ?? call.profile.temperature { body["temperature"] = t }
         }
+        if let schema = chat.jsonSchema {
+            body["response_format"] = ["type": "json_schema", "json_schema": ["name": "reply", "schema": schema]]
+        }
         var headers = ["Content-Type": "application/json", "Accept": "text/event-stream"]
         let url: URL
         if kind == .local {
@@ -42,6 +45,17 @@ public struct OpenAIProvider: Provider {
             url = OpenAIProvider.endpoint
         }
         return HttpRequest(url: url, headers: headers, body: try JSON.data(body))
+    }
+
+    /// A plain string for text-only messages; text and `image_url` data-URI parts otherwise.
+    static func content(_ message: ChatMessage) -> Any {
+        guard message.parts != nil else { return message.text }
+        return message.contentParts.map { part -> [String: Any] in
+            switch part {
+            case .text(let t): return ["type": "text", "text": t]
+            case .image(let data, let mediaType): return ["type": "image_url", "image_url": ["url": "data:\(mediaType);base64,\(data)"]]
+            }
+        }
     }
 
     public func makeParser() -> ProviderStreamParser { Parser() }

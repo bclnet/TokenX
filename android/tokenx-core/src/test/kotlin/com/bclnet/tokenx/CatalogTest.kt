@@ -13,7 +13,7 @@ class CatalogTest {
             assertEquals(provider, model.provider)
             if (provider == ProviderKind.LOCAL) assertFalse(model.vision)
         }
-        assertEquals("claude-opus-5", Catalog.model(Profile.CHARACTER, ProviderKind.ANTHROPIC).id)
+        assertEquals("claude-opus-5-5", Catalog.model(Profile.CHARACTER, ProviderKind.ANTHROPIC).id)
         assertEquals("claude-haiku-4-5", Catalog.model(Profile.FAST, ProviderKind.ANTHROPIC).id)
         assertEquals(ModelTier.FAST, Catalog.model(Profile.FAST, ProviderKind.OPENAI).tier)
         assertEquals(ProviderKind.GEMINI, Catalog.model("gemini-2.5-flash")?.provider)
@@ -21,9 +21,10 @@ class CatalogTest {
     }
 
     @Test fun costAndProfiles() {
-        val opus = Catalog.model("claude-opus-5")!!
-        assertEquals(5_000_000L, opus.costMicros(1_000_000, 0))
-        assertEquals(7500L, opus.costMicros(1000, 100))
+        val opus = Catalog.model("claude-opus-5-5")!!
+        assertEquals(4_000_000L, opus.costMicros(1_000_000, 0))
+        assertEquals(6000L, opus.costMicros(1000, 100))
+        assertEquals(ModelTier.BALANCED, Catalog.model("claude-sonnet-5-5")?.tier)
         assertEquals("low", Profile.CHARACTER.effort)
         assertEquals(4096, Profile.ASSISTANT.maxTokens)
         assertTrue(Profile.VISION.needsVision)
@@ -33,6 +34,10 @@ class CatalogTest {
     @Test fun chatRequestEstimate() {
         val r = ChatRequest(system = "a".repeat(40), messages = listOf(ChatMessage.user("b".repeat(32))))
         assertEquals(20, r.estimatedPromptTokens)
+        val withImage = ChatRequest(messages = listOf(ChatMessage.user(listOf(ChatPart.Text("look"), ChatPart.Image("AAAA", "image/png")))))
+        assertEquals("look", withImage.messages[0].text)
+        assertEquals(1, withImage.messages[0].imageCount)
+        assertTrue(withImage.estimatedPromptTokens >= 1600)
     }
 
     @Test fun miniJsonRoundTrip() {

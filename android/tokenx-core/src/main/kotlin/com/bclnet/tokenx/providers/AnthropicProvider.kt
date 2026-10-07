@@ -8,6 +8,7 @@ package com.bclnet.tokenx.providers
 
 import com.bclnet.tokenx.ChatEvent
 import com.bclnet.tokenx.ChatMessage
+import com.bclnet.tokenx.ChatPart
 import com.bclnet.tokenx.ChatRequest
 import com.bclnet.tokenx.HttpRequest
 import com.bclnet.tokenx.MiniJson
@@ -28,7 +29,7 @@ class AnthropicProvider : Provider {
 
     override fun request(chat: ChatRequest, call: ProviderCall): HttpRequest {
         val key = call.key?.takeIf { it.isNotEmpty() } ?: throw TokenXException.MissingKey(ProviderKind.ANTHROPIC)
-        val fiveGeneration = call.model.id.startsWith("claude-opus-5") || call.model.id.startsWith("claude-sonnet-5")
+        val fiveGeneration = isFiveGeneration(call.model.id)
         val body = linkedMapOf<String, Any?>(
             "model" to call.model.id,
             "max_tokens" to (chat.maxTokens ?: call.maxTokens),
@@ -39,8 +40,16 @@ class AnthropicProvider : Provider {
         // Sampling parameters are rejected on the 5-generation models; thinking effort takes their place there.
         val temperature = chat.temperature ?: call.profile.temperature
         if (temperature != null && !fiveGeneration) body["temperature"] = temperature
-        if (fiveGeneration) call.profile.effort?.let { body["output_config"] = mapOf("effort" to it) }
-        return HttpRequest(ENDPOINT, headers = mapOf("Content-Type" to "application/json", "x-api-key" to key, "anthropic-version" to VERSION, "Accept" to "text/event-stream"), body = MiniJson.stringify(body).toByteArray())
+        val outputConfig = linkedMapOf<String, Any?>()
+        if (fiveGeneration) call.profile.effort?.let { outputConfig["effort"] = it }
+        chat.jsonSchema?.let { outputConfig["format"] = mapOf("type" to "json_schema", "schema" to it) }
+        if (outputConfig.isNotEmpty()) body["output_config"] = outputConfig
+        val headers = linkedMapOf("Content-Type" to "application/json", "x-api-key" to key, "anthropic-version" to VERSION, "Accept" to "text/event-stream")
+        if (supportsFallbacks(call.model.id)) {
+            headers["anthropic-beta"] = FALLBACK_BETA
+            body["fallbacks"] = "default"
+        }
+        return HttpRequest(ENDPOINT, headers = headers, body = MiniJson.stringify(body).toByteArray())
     }
 
     override fun makeParser(): ProviderStreamParser = Parser()
@@ -68,15 +77,40 @@ class AnthropicProvider : Provider {
     companion object {
         const val ENDPOINT = "https://api.anthropic.com/v1/messages"
         const val VERSION = "2023-06-01"
+        /** Server-side refusal fallbacks (`fallbacks: "default"`) for the models that run safety classifiers. */
+        const val FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
-        /** Anthropic requires alternating roles starting with `user`; adjacent same-role turns are merged. */
+        /** The 5-generation models take `output_config.effort` and reject sampling parameters. */
+        fun isFiveGeneration(id: String) = id.startsWith("claude-opus-5") || id.startsWith("claude-sonnet-5") || id.startsWith("claude-fable-5")
+        /** The models that accept `fallbacks: "default"` under the fallback beta header. */
+        fun supportsFallbacks(id: String) = id.startsWith("claude-opus-5") || id.startsWith("claude-sonnet-5-5") || id.startsWith("claude-fable-5")
+
+        /** Content blocks for a message: text blocks and base64 image blocks. */
+        fun blocks(message: ChatMessage): List<Map<String, Any?>> = message.contentParts.map { part ->
+            when (part) {
+                is ChatPart.Text -> mapOf("type" to "text", "text" to part.text)
+                is ChatPart.Image -> mapOf("type" to "image", "source" to mapOf("type" to "base64", "media_type" to part.mediaType, "data" to part.data))
+            }
+        }
+
+        /**
+         * Anthropic requires alternating roles starting with `user`; adjacent same-role turns are merged.
+         * Text-only messages are sent as a string, messages with parts as content blocks.
+         */
+        @Suppress("UNCHECKED_CAST")
         fun messages(messages: List<ChatMessage>): List<Map<String, Any?>> {
             val out = ArrayList<LinkedHashMap<String, Any?>>()
             for (m in messages) {
                 val role = m.role.id
                 val last = out.lastOrNull()
-                if (last != null && last["role"] == role) last["content"] = (last["content"] as String) + "\n" + m.text
-                else out += linkedMapOf("role" to role, "content" to m.text)
+                if (last != null && last["role"] == role) {
+                    val content = last["content"]
+                    if (content is String && m.parts == null) last["content"] = content + "\n" + m.text
+                    else {
+                        val previous = if (content is String) listOf(mapOf("type" to "text", "text" to content)) else content as List<Map<String, Any?>>
+                        last["content"] = previous + blocks(m)
+                    }
+                } else out += linkedMapOf("role" to role, "content" to (if (m.parts == null) m.text else blocks(m)))
             }
             if (out.firstOrNull()?.get("role") != "user") out.add(0, linkedMapOf("role" to "user", "content" to "(start)"))
             return out

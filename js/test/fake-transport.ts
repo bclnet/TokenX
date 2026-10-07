@@ -1,30 +1,28 @@
-package com.bclnet.tokenx
-
-import java.net.URI
+import { LineSplitter, TokenXError, type HttpRequest, type HttpTransport, type StreamHandlers } from '../src';
 
 /** Serves canned bodies by URL host, line by line, the way a streaming server would. */
-class FakeTransport : HttpTransport {
-    val responses = HashMap<String, Pair<Int, String>>()
-    val requests = ArrayList<HttpRequest>()
-    var failWith: TokenXException? = null
+export class FakeTransport implements HttpTransport {
+  responses: Record<string, { status: number; body: string }> = {};
+  requests: HttpRequest[] = [];
+  failWith?: TokenXError;
 
-    override fun stream(request: HttpRequest, onStatus: (Int) -> Unit, onLine: (String) -> Unit, completion: (Result<Unit>) -> Unit): Cancellable {
-        requests += request
-        failWith?.let { completion(Result.failure(it)); return NoopCancellable }
-        val host = runCatching { URI(request.url).host }.getOrNull() ?: ""
-        val (status, body) = responses[host] ?: run { completion(Result.failure(TokenXException.Http(404, "no canned response for ${request.url}"))); return NoopCancellable }
-        onStatus(status)
-        if (status in 200..299) {
-            body.split("\n").let { lines -> lines.forEachIndexed { i, line -> if (i < lines.size - 1 || line.isNotEmpty()) onLine(line) } }
-            completion(Result.success(Unit))
-        } else completion(Result.failure(TokenXException.Http(status, body)))
-        return NoopCancellable
-    }
+  async stream(request: HttpRequest, handlers: StreamHandlers): Promise<void> {
+    this.requests.push(request);
+    if (this.failWith) throw this.failWith;
+    const host = new URL(request.url).host;
+    const response = this.responses[host];
+    if (!response) throw TokenXError.http(404, `no canned response for ${request.url}`);
+    handlers.onStatus?.(response.status);
+    if (response.status < 200 || response.status >= 300) throw TokenXError.http(response.status, response.body);
+    const splitter = new LineSplitter();
+    for (const line of splitter.append(new TextEncoder().encode(response.body))) handlers.onLine(line);
+    const last = splitter.flush();
+    if (last !== undefined) handlers.onLine(last);
+  }
 }
 
-object Canned {
-    val anthropic = """
-event: message_start
+export const Canned = {
+  anthropic: `event: message_start
 data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","usage":{"input_tokens":25,"output_tokens":1}}}
 
 event: content_block_start
@@ -44,11 +42,8 @@ data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":
 
 event: message_stop
 data: {"type":"message_stop"}
-
-""".trimStart()
-
-    val anthropicRefusal = """
-event: message_start
+`,
+  anthropicRefusal: `event: message_start
 data: {"type":"message_start","message":{"id":"msg_2","type":"message","role":"assistant","usage":{"input_tokens":30,"output_tokens":0}}}
 
 event: message_delta
@@ -56,10 +51,8 @@ data: {"type":"message_delta","delta":{"stop_reason":"refusal","stop_sequence":n
 
 event: message_stop
 data: {"type":"message_stop"}
-"""
-
-    val openai = """
-data: {"id":"c1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+`,
+  openai: `data: {"id":"c1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
 
 data: {"id":"c1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
 
@@ -68,12 +61,9 @@ data: {"id":"c1","object":"chat.completion.chunk","choices":[{"index":0,"delta":
 data: {"id":"c1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":2,"total_tokens":14}}
 
 data: [DONE]
-
-""".trimStart()
-
-    val gemini = """
-data: {"candidates":[{"content":{"parts":[{"text":"Woof"}],"role":"model"},"index":0}],"usageMetadata":{"promptTokenCount":7,"candidatesTokenCount":1}}
+`,
+  gemini: `data: {"candidates":[{"content":{"parts":[{"text":"Woof"}],"role":"model"},"index":0}],"usageMetadata":{"promptTokenCount":7,"candidatesTokenCount":1}}
 
 data: {"candidates":[{"content":{"parts":[{"text":"."}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":7,"candidatesTokenCount":2,"totalTokenCount":9}}
-""".trimStart()
-}
+`,
+};

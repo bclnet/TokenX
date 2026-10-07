@@ -111,7 +111,7 @@ class TokenServer(val store: TokenStore, val cipher: SecretCipher, val transport
                         prompt = if (settings.logPrompts) request.messages.lastOrNull()?.text else null, reply = if (settings.logPrompts) reply else null))
                     if (cost > 0 && settings.credits[kind] != null) update { s -> s.credits[kind]?.let { c -> s.copy(credits = s.credits + (kind to c.copy(spentMicros = c.spentMicros + cost))) } ?: s }
                 }
-                completion(Result.success(ChatReply(reply, usage, stop)))
+                completion(Result.success(ChatReply(reply, usage, stop, model.id, kind)))
             })
         })
     }
