@@ -14,6 +14,9 @@ sees a key, a model name or a vendor.
   library/screen ◄─ TokenClient ─ TokenSession(consumer, profile, budget)
 ```
 
+A project adopting the library should start with [INTEGRATION.md](INTEGRATION.md),
+the how-to; this page is the reference.
+
 ## The client side
 
 A consumer holds a `TokenClient` and opens sessions:
@@ -185,6 +188,7 @@ opinion TokenX ships with.
 ## Layout
 
 ```
+docs/TOKENX.md            this reference; docs/INTEGRATION.md the adopter's guide
 Package.swift             Swift manifest (root, so SwiftPM can add the package by URL)
 ios/Sources/TokenX        catalog, chat types, transport, providers, store, SQLiteStore, server, client
 ios/Sources/TokenXApple   KeychainCipher, TokenXBootstrap.standard(appId:), TokenXModel (ObservableObject)

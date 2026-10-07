@@ -31,7 +31,8 @@ const reply = await session.stream({ system: persona, messages: [ChatMessage.use
 ```
 
 `docs/TOKENX.md` explains the two halves, the profiles, the store and the
-policy. Providers are Anthropic, OpenAI, Google Gemini, DeepSeek, Kimi
+policy; `docs/INTEGRATION.md` is the step-by-step guide for a project that
+adopts the library. Providers are Anthropic, OpenAI, Google Gemini, DeepSeek, Kimi
 (Moonshot), Qwen (Alibaba Cloud Model Studio) and any OpenAI-compatible local
 server, all over plain HTTPS and server-sent events with no vendor SDKs. Profiles and the model catalog are opinionated code,
 not rows; the SQLite database holds only keys, a few settings and usage.

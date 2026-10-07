@@ -9,7 +9,8 @@ learn which vendor or model answered.
 
 TokenX is a standalone library: it must not know about JsonMind, JsonScene or
 QRX. Adapters live with the consumers (JsonMind's `TokenXMindProvider`).
-`docs/TOKENX.md` is the reference.
+`docs/TOKENX.md` is the reference; `docs/INTEGRATION.md` is the guide for
+projects that adopt the library.
 
 ## Layout
 
@@ -69,6 +70,20 @@ cd js && npm ci && npm run typecheck && npm test
 - Speech-to-text is not TokenX's concern; it stays in the app.
 - Keep Swift, Kotlin and TypeScript in step, with tests on all three sides. The TS store API is
   async and the TS package has no UI pieces; publishing `tokenx` to npm is a separate step.
+
+## Keep the integration guide current
+
+`docs/INTEGRATION.md` is what adopting projects follow, so it must never lag
+the code. Any change that touches what a host or consumer sees updates the
+guide in the same commit: a public type, initializer, method or property on
+`TokenServer`, `TokenClient`, `TokenSession`, `ChatRequest`, `ChatMessage`,
+`ChatReply`, `Settings` or the UI pieces; a new or removed provider, profile
+or error case; a change to how a package is added, bootstrapped or tested;
+a new platform. Keep its snippets runnable against the current API on all
+three platforms, keep the numbered sections and the closing checklist, and
+add a section rather than a footnote when a feature changes how a project
+integrates. When in doubt whether a change belongs there: if an adopter would
+have to read the source to learn it, it belongs in the guide.
 
 ## Gotchas
 
