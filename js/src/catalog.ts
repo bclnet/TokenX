@@ -6,7 +6,7 @@
  * Port of TokenX `Catalog.swift`.
  */
 
-export const PROVIDER_KINDS = ['anthropic', 'openai', 'gemini', 'local'] as const;
+export const PROVIDER_KINDS = ['anthropic', 'openai', 'gemini', 'deepseek', 'kimi', 'qwen', 'local'] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 
 export function providerDisplayName(kind: ProviderKind): string {
@@ -17,6 +17,12 @@ export function providerDisplayName(kind: ProviderKind): string {
       return 'OpenAI';
     case 'gemini':
       return 'Google Gemini';
+    case 'deepseek':
+      return 'DeepSeek';
+    case 'kimi':
+      return 'Kimi (Moonshot)';
+    case 'qwen':
+      return 'Qwen (Alibaba)';
     case 'local':
       return 'Local server';
   }
@@ -130,6 +136,22 @@ export const Catalog = {
     m('gemini', 'gemini-2.5-pro', 'Gemini 2.5 Pro', 'best', 1.25, 10, 1_000_000),
     m('gemini', 'gemini-2.5-flash', 'Gemini 2.5 Flash', 'balanced', 0.3, 2.5, 1_000_000),
     m('gemini', 'gemini-2.5-flash-lite', 'Gemini 2.5 Flash-Lite', 'fast', 0.1, 0.4, 1_000_000),
+  ] as ModelInfo[],
+  /** DeepSeek: V4 Pro and Flash at peak rates; only Flash takes images. */
+  deepseek: [
+    m('deepseek', 'deepseek-v4-pro', 'DeepSeek V4 Pro', 'best', 1.32, 3.96, 1_000_000, false),
+    m('deepseek', 'deepseek-flash', 'DeepSeek Flash', 'fast', 0.3, 1.2, 1_000_000),
+  ] as ModelInfo[],
+  /** Kimi (Moonshot): K3 and K2.6; both take images. */
+  kimi: [
+    m('kimi', 'kimi-k3', 'Kimi K3', 'best', 3, 15, 1_000_000),
+    m('kimi', 'kimi-k2.6', 'Kimi K2.6', 'balanced', 0.95, 4, 256_000),
+  ] as ModelInfo[],
+  /** Qwen (Alibaba Cloud Model Studio, international): the 3.8 / 3.7 line, all multimodal, base-tier prices. */
+  qwen: [
+    m('qwen', 'qwen3.8-max', 'Qwen 3.8 Max', 'best', 2, 6, 1_000_000),
+    m('qwen', 'qwen3.7-plus', 'Qwen 3.7 Plus', 'balanced', 0.4, 1.6, 1_000_000),
+    m('qwen', 'qwen3.8-flash', 'Qwen 3.8 Flash', 'fast', 0.15, 0.47, 1_000_000),
   ] as ModelInfo[],
   /** A local server serves whatever model is loaded; the id is the settings' `localModel`. */
   local: [m('local', 'local', 'Local model', 'balanced', 0, 0, 32_000, false)] as ModelInfo[],

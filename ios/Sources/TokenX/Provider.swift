@@ -38,8 +38,7 @@ public enum Providers {
     public static func provider(for kind: ProviderKind) -> Provider {
         switch kind {
         case .anthropic: return AnthropicProvider()
-        case .openai: return OpenAIProvider(kind: .openai)
-        case .local: return OpenAIProvider(kind: .local)
+        case .openai, .deepseek, .kimi, .qwen, .local: return OpenAIProvider(kind: kind)
         case .gemini: return GeminiProvider()
         }
     }

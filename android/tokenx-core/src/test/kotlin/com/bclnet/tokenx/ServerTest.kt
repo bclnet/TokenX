@@ -127,6 +127,26 @@ class ServerTest {
         assertEquals("Hello there", row.reply)
     }
 
+    @Test fun openAICompatibleVendorsServeProfiles() {
+        transport.responses["api.deepseek.com"] = 200 to Canned.openai
+        transport.responses["api.moonshot.ai"] = 200 to Canned.openai
+        transport.responses["dashscope-intl.aliyuncs.com"] = 200 to Canned.openai
+        for ((kind, model) in listOf(ProviderKind.DEEPSEEK to "deepseek-v4-pro", ProviderKind.KIMI to "kimi-k3", ProviderKind.QWEN to "qwen3.8-max")) {
+            server.activate(kind, "k-${kind.id}")
+            assertTrue(server.isReady)
+            assertEquals(model, server.model(Profile.CHARACTER)?.id)
+            val (result, _) = stream(TokenClient(server).session("bush", Profile.CHARACTER))
+            val reply = result!!.getOrThrow()
+            assertEquals("Hello there", reply.text)
+            assertEquals(kind, reply.provider)
+            assertEquals(model, reply.model)
+            assertEquals("Bearer k-${kind.id}", transport.requests.last().headers["Authorization"])
+            assertEquals(kind, server.recentUsage().first().provider)
+        }
+        assertEquals(listOf(ProviderKind.DEEPSEEK, ProviderKind.KIMI, ProviderKind.QWEN), server.configuredProviders)
+        assertEquals(3, server.usageToday().requests)
+    }
+
     @Test fun httpErrorsSurface() {
         server.activate(ProviderKind.ANTHROPIC, "k")
         transport.responses["api.anthropic.com"] = 401 to """{"error":{"message":"invalid x-api-key"}}"""

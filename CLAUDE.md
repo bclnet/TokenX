@@ -15,22 +15,23 @@ QRX. Adapters live with the consumers (JsonMind's `TokenXMindProvider`).
 
 ```
 Package.swift               products TokenX, TokenXApple, TokenXUI; CSQLite system library (pkg-config sqlite3 on Linux only)
-ios/Sources/TokenX          Catalog (ProviderKind anthropic/openai/gemini/local, ModelTier, ModelInfo, Profile
+ios/Sources/TokenX          Catalog (ProviderKind anthropic/openai/gemini/deepseek/kimi/qwen/local, ModelTier, ModelInfo, Profile
                             character/assistant/fast/vision), Chat types (ChatPart text/image, ChatMessage.parts,
                             ChatRequest.jsonSchema, ChatReply.model/provider), Transport (URLSession + SSE parser),
-                            Provider protocol, Providers/{Anthropic,OpenAI,Gemini}Provider, Store (SecretCipher,
+                            Provider protocol, Providers/{Anthropic,OpenAI,Gemini}Provider (OpenAIProvider also serves
+                            deepseek, kimi, qwen and local at their own endpoints), Store (SecretCipher,
                             KeyRepository, Settings, UsageRecord/UsageTotals, TokenStore, InMemoryStore),
                             SQLiteStore (sqlite3 C API), TokenServer, TokenClient/TokenSession
 ios/Sources/TokenXApple     KeychainCipher (CryptoKit AES-GCM, key in Keychain), TokenXBootstrap.standard(appId:),
                             TokenXModel (ObservableObject over the server)
 ios/Sources/TokenXUI        SwiftUI pieces: TokenXSettingsSection, TokenXUsageView, TokenXUsageRow, TokenXRemainingView, TokenXStatusBadge
-ios/Tests/TokenXTests       23 tests with FakeTransport and canned SSE bodies
-android/tokenx-core         Kotlin/JVM mirror; MiniJson (no serialization dependency); JdbcSqlDatabase for tests; 23 tests
+ios/Tests/TokenXTests       25 tests with FakeTransport and canned SSE bodies
+android/tokenx-core         Kotlin/JVM mirror; MiniJson (no serialization dependency); JdbcSqlDatabase for tests; 25 tests
 android/tokenx-android      AndroidSqlDatabase, KeystoreCipher, TokenX.standard(context)
 android/tokenx-compose      TokenXModel (Compose state), TokenXSettings, TokenXUsage, TokenXUsageRow, TokenXRemaining, TokenXStatusBadge
 js/                         TypeScript mirror, npm package `tokenx` (Node / Workers / React Native): src/*.ts file for file
                             with ios/Sources/TokenX, fetch + ReadableStream transport, async TokenStore, InMemoryStore,
-                            AesGcmCipher (WebCrypto, host-supplied key); no UI pieces; test/*.test.ts, 22 vitest tests
+                            AesGcmCipher (WebCrypto, host-supplied key); no UI pieces; test/*.test.ts, 24 vitest tests
 ```
 
 ## Build and test
@@ -44,7 +45,14 @@ cd js && npm ci && npm run typecheck && npm test
 ## Design decisions (agreed with the owner)
 
 - No vendor SDKs: Anthropic Messages API, OpenAI chat completions and Gemini
-  `streamGenerateContent` over plain HTTPS and server-sent events.
+  `streamGenerateContent` over plain HTTPS and server-sent events. DeepSeek (api.deepseek.com),
+  Kimi (api.moonshot.ai) and Qwen (dashscope-intl.aliyuncs.com compatible mode, the shared
+  international endpoint) are OpenAI-compatible and share OpenAIProvider with per-kind rules:
+  `max_completion_tokens` for OpenAI and Kimi, `max_tokens` elsewhere; no temperature for OpenAI
+  or Kimi; the profile's effort drives each vendor's thinking switch (DeepSeek `thinking`, Kimi
+  `reasoning_effort` on K3 / `thinking` on K2, Qwen `enable_thinking`), low turns thinking off;
+  DeepSeek and Qwen get `response_format: json_object` with the schema appended to the system
+  prompt, the others `json_schema`.
 - Providers, the model catalog and profiles are opinionated code, not database rows.
   The database holds only keys (ciphertext), a few settings and usage.
 - Anthropic requests on 5-generation models send `output_config.effort` and no sampling

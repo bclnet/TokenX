@@ -1,16 +1,40 @@
 /**
  * OpenAI chat completions over HTTPS with server-sent events. The same code serves
+ * the OpenAI-compatible vendors (DeepSeek, Kimi, Qwen) at their own endpoints, and
  * `local`: an OpenAI-compatible server (Ollama, LM Studio, vLLM) at a base URL from
  * the settings, with no key. Port of `OpenAIProvider.swift`.
  */
-import type { ProviderKind } from '../catalog';
+import { ProfileInfo, type ProviderKind } from '../catalog';
 import { messageParts, type ChatEvent, type ChatMessage, type ChatRequest, type StopReason, type Usage } from '../chat';
 import { TokenXError } from '../chat';
 import { arr, callMaxTokens, callTemperature, num, obj, parseJSONObject, str, type Provider, type ProviderCall, type ProviderStreamParser } from '../provider';
 import { httpRequest, SSEParser, type HttpRequest } from '../transport';
 
 export const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
+export const DEEPSEEK_ENDPOINT = 'https://api.deepseek.com/chat/completions';
+export const KIMI_ENDPOINT = 'https://api.moonshot.ai/v1/chat/completions';
+export const QWEN_ENDPOINT = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions';
 
+/** The hosted endpoint for a kind; `undefined` for `local`, whose base URL comes from the settings. */
+export function openAIEndpoint(kind: ProviderKind): string | undefined {
+  switch (kind) {
+    case 'openai':
+      return OPENAI_ENDPOINT;
+    case 'deepseek':
+      return DEEPSEEK_ENDPOINT;
+    case 'kimi':
+      return KIMI_ENDPOINT;
+    case 'qwen':
+      return QWEN_ENDPOINT;
+    default:
+      return undefined;
+  }
+}
+
+/** Whether the vendor enforces a schema (`response_format: json_schema`); the rest get JSON mode and the schema in the prompt. */
+export const supportsJSONSchema = (kind: ProviderKind): boolean => kind !== 'deepseek' && kind !== 'qwen';
+
+/** A plain string for text-only messages; text and `image_url` data-URI parts otherwise. */
 function content(message: ChatMessage): string | unknown[] {
   if (!message.parts) return message.text;
   return messageParts(message).map((p) =>
@@ -22,34 +46,60 @@ export class OpenAIProvider implements Provider {
   constructor(readonly kind: ProviderKind = 'openai') {}
 
   request(chat: ChatRequest, call: ProviderCall): HttpRequest {
-    const messages: unknown[] = [];
-    if (chat.system) messages.push({ role: 'system', content: chat.system });
-    for (const m of chat.messages) messages.push({ role: m.role, content: content(m) });
+    const kind = this.kind;
+    let system = chat.system ?? '';
     const body: Record<string, unknown> = {
       model: call.model.id,
       stream: true,
       stream_options: { include_usage: true },
-      messages,
     };
-    if (this.kind === 'openai') {
-      body.max_completion_tokens = callMaxTokens(call, chat);
-    } else {
-      body.max_tokens = callMaxTokens(call, chat);
-      const t = callTemperature(call, chat);
-      if (t !== undefined) body.temperature = t;
+    // OpenAI and Kimi have retired `max_tokens`; the others still document it.
+    body[kind === 'openai' || kind === 'kimi' ? 'max_completion_tokens' : 'max_tokens'] = callMaxTokens(call, chat);
+    // OpenAI's current models reject sampling parameters; Kimi fixes the temperature per model.
+    const t = callTemperature(call, chat);
+    if (kind !== 'openai' && kind !== 'kimi' && t !== undefined) body.temperature = t;
+    // The vendors whose models think by default take the profile's effort as a switch: low turns thinking off.
+    const effort = ProfileInfo.effort(call.profile);
+    if (effort) {
+      switch (kind) {
+        case 'deepseek':
+          body.thinking = effort === 'low' ? { type: 'disabled' } : { type: 'enabled', reasoning_effort: effort };
+          break;
+        case 'kimi':
+          if (call.model.id.startsWith('kimi-k3')) body.reasoning_effort = effort;
+          else body.thinking = { type: effort === 'low' ? 'disabled' : 'enabled' };
+          break;
+        case 'qwen':
+          body.enable_thinking = effort !== 'low';
+          break;
+        default:
+          break;
+      }
     }
     if (chat.jsonSchema) {
-      body.response_format = { type: 'json_schema', json_schema: { name: 'reply', schema: chat.jsonSchema } };
+      if (supportsJSONSchema(kind)) {
+        body.response_format = { type: 'json_schema', json_schema: { name: 'reply', schema: chat.jsonSchema } };
+      } else {
+        // JSON mode only: the schema goes in the prompt, which must mention JSON for these APIs to accept the mode.
+        body.response_format = { type: 'json_object' };
+        system += `${system ? '\n\n' : ''}Reply with a single JSON object that matches this JSON schema: ${JSON.stringify(chat.jsonSchema)}`;
+      }
     }
+    const messages: unknown[] = [];
+    if (system) messages.push({ role: 'system', content: system });
+    for (const m of chat.messages) messages.push({ role: m.role, content: content(m) });
+    body.messages = messages;
     const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
     let url: string;
-    if (this.kind === 'local') {
+    if (kind === 'local') {
       if (!call.baseURL) throw TokenXError.transport('no local server URL');
       url = `${call.baseURL.replace(/\/+$/, '')}/chat/completions`;
     } else {
-      if (!call.key) throw TokenXError.missingKey('openai');
+      if (!call.key) throw TokenXError.missingKey(kind);
+      const hosted = openAIEndpoint(kind);
+      if (!hosted) throw TokenXError.transport(`no endpoint for ${kind}`);
       headers.Authorization = `Bearer ${call.key}`;
-      url = OPENAI_ENDPOINT;
+      url = hosted;
     }
     return httpRequest(url, headers, body);
   }

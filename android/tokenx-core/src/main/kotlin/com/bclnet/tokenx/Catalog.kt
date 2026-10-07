@@ -12,6 +12,12 @@ enum class ProviderKind(val id: String, val displayName: String, val needsKey: B
     ANTHROPIC("anthropic", "Anthropic"),
     OPENAI("openai", "OpenAI"),
     GEMINI("gemini", "Google Gemini"),
+    /** DeepSeek's OpenAI-compatible API (api.deepseek.com). */
+    DEEPSEEK("deepseek", "DeepSeek"),
+    /** Moonshot's Kimi platform, OpenAI-compatible (api.moonshot.ai). */
+    KIMI("kimi", "Kimi (Moonshot)"),
+    /** Alibaba Cloud Model Studio's Qwen models, OpenAI-compatible (dashscope-intl.aliyuncs.com). */
+    QWEN("qwen", "Qwen (Alibaba)"),
     /** An OpenAI-compatible server on the local network (Ollama, LM Studio, vLLM); no key needed. */
     LOCAL("local", "Local server", needsKey = false);
 
@@ -78,11 +84,28 @@ object Catalog {
         ModelInfo(ProviderKind.GEMINI, "gemini-2.5-flash", "Gemini 2.5 Flash", ModelTier.BALANCED, 0.3, 2.5, 1_000_000),
         ModelInfo(ProviderKind.GEMINI, "gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite", ModelTier.FAST, 0.1, 0.4, 1_000_000),
     )
+    /** DeepSeek: V4 Pro and Flash at peak rates; only Flash takes images. */
+    val deepseek = listOf(
+        ModelInfo(ProviderKind.DEEPSEEK, "deepseek-v4-pro", "DeepSeek V4 Pro", ModelTier.BEST, 1.32, 3.96, 1_000_000, vision = false),
+        ModelInfo(ProviderKind.DEEPSEEK, "deepseek-flash", "DeepSeek Flash", ModelTier.FAST, 0.30, 1.20, 1_000_000),
+    )
+    /** Kimi (Moonshot): K3 and K2.6; both take images. */
+    val kimi = listOf(
+        ModelInfo(ProviderKind.KIMI, "kimi-k3", "Kimi K3", ModelTier.BEST, 3.0, 15.0, 1_000_000),
+        ModelInfo(ProviderKind.KIMI, "kimi-k2.6", "Kimi K2.6", ModelTier.BALANCED, 0.95, 4.0, 256_000),
+    )
+    /** Qwen (Alibaba Cloud Model Studio, international): the 3.8 / 3.7 line, all multimodal, base-tier prices. */
+    val qwen = listOf(
+        ModelInfo(ProviderKind.QWEN, "qwen3.8-max", "Qwen 3.8 Max", ModelTier.BEST, 2.0, 6.0, 1_000_000),
+        ModelInfo(ProviderKind.QWEN, "qwen3.7-plus", "Qwen 3.7 Plus", ModelTier.BALANCED, 0.4, 1.6, 1_000_000),
+        ModelInfo(ProviderKind.QWEN, "qwen3.8-flash", "Qwen 3.8 Flash", ModelTier.FAST, 0.15, 0.47, 1_000_000),
+    )
     /** A local server serves whatever model is loaded; the id is the settings' `localModel`. */
     val local = listOf(ModelInfo(ProviderKind.LOCAL, "local", "Local model", ModelTier.BALANCED, 0.0, 0.0, 32_000, vision = false))
 
     fun models(provider: ProviderKind): List<ModelInfo> = when (provider) {
-        ProviderKind.ANTHROPIC -> anthropic; ProviderKind.OPENAI -> openai; ProviderKind.GEMINI -> gemini; ProviderKind.LOCAL -> local
+        ProviderKind.ANTHROPIC -> anthropic; ProviderKind.OPENAI -> openai; ProviderKind.GEMINI -> gemini
+        ProviderKind.DEEPSEEK -> deepseek; ProviderKind.KIMI -> kimi; ProviderKind.QWEN -> qwen; ProviderKind.LOCAL -> local
     }
 
     val all: List<ModelInfo> get() = ProviderKind.entries.flatMap { models(it) }

@@ -6,9 +6,14 @@ import {
   bodyJSON,
   Catalog,
   ChatMessage,
+  DEEPSEEK_ENDPOINT,
   GeminiProvider,
+  KIMI_ENDPOINT,
   LineSplitter,
   OpenAIProvider,
+  PROVIDER_KINDS,
+  Providers,
+  QWEN_ENDPOINT,
   type ChatRequest,
   type Provider,
   type StopReason,
@@ -121,6 +126,68 @@ describe('OpenAIProvider', () => {
     expect(result.done?.usage).toEqual({ promptTokens: 12, replyTokens: 2 });
   });
 
+  it('serves DeepSeek, Kimi and Qwen as OpenAI-compatible vendors', () => {
+    // DeepSeek: its own endpoint, max_tokens, temperature, thinking off for low effort, JSON mode with the schema in the prompt
+    const deepseek = new OpenAIProvider('deepseek').request(
+      { system: 'bush', messages: [ChatMessage.user('sing')], jsonSchema: { type: 'object' } },
+      { model: Catalog.model('deepseek-flash')!, key: 'ds', profile: 'character' },
+    );
+    expect(deepseek.url).toBe(DEEPSEEK_ENDPOINT);
+    expect(deepseek.headers.Authorization).toBe('Bearer ds');
+    let body = bodyJSON(deepseek)!;
+    expect(body.model).toBe('deepseek-flash');
+    expect(body.max_tokens).toBe(400);
+    expect(body.max_completion_tokens).toBeUndefined();
+    expect(body.temperature).toBe(0.9);
+    expect(body.thinking).toEqual({ type: 'disabled' });
+    expect(body.response_format).toEqual({ type: 'json_object' });
+    let messages = body.messages as { role: string; content: string }[];
+    expect(messages[0]!.role).toBe('system');
+    expect(messages[0]!.content.startsWith('bush\n\nReply with a single JSON object that matches this JSON schema: {"type":"object"}')).toBe(true);
+    body = bodyJSON(new OpenAIProvider('deepseek').request(chat, { model: Catalog.model('deepseek-v4-pro')!, key: 'ds', profile: 'assistant' }))!;
+    expect(body.thinking).toEqual({ type: 'enabled', reasoning_effort: 'high' });
+    expect(body.temperature).toBeUndefined();
+    expect(body.response_format).toBeUndefined();
+    expect(body.messages).toHaveLength(4);
+
+    // Kimi: max_completion_tokens, no temperature, reasoning_effort on K3 and a thinking switch on K2, json_schema
+    const kimi = new OpenAIProvider('kimi').request({ messages: [ChatMessage.user('sing')], jsonSchema: { type: 'object' } }, { model: Catalog.model('kimi-k3')!, key: 'mk', profile: 'assistant' });
+    expect(kimi.url).toBe(KIMI_ENDPOINT);
+    expect(kimi.headers.Authorization).toBe('Bearer mk');
+    body = bodyJSON(kimi)!;
+    expect(body.max_completion_tokens).toBe(4096);
+    expect(body.max_tokens).toBeUndefined();
+    expect(body.temperature).toBeUndefined();
+    expect(body.reasoning_effort).toBe('high');
+    expect(body.thinking).toBeUndefined();
+    expect((body.response_format as { type: string }).type).toBe('json_schema');
+    expect(body.messages).toHaveLength(1);
+    body = bodyJSON(new OpenAIProvider('kimi').request(chat, { model: Catalog.model('kimi-k2.6')!, key: 'mk', profile: 'character' }))!;
+    expect(body.thinking).toEqual({ type: 'disabled' });
+    expect(body.reasoning_effort).toBeUndefined();
+    expect(body.temperature, 'Kimi fixes the temperature per model').toBeUndefined();
+
+    // Qwen: the international compatible-mode endpoint, max_tokens, temperature, enable_thinking, JSON mode
+    const qwen = new OpenAIProvider('qwen').request({ messages: [ChatMessage.user('sing')], jsonSchema: { type: 'object' } }, { model: Catalog.model('qwen3.8-flash')!, key: 'qw', profile: 'fast' });
+    expect(qwen.url).toBe(QWEN_ENDPOINT);
+    expect(qwen.headers.Authorization).toBe('Bearer qw');
+    body = bodyJSON(qwen)!;
+    expect(body.max_tokens).toBe(1024);
+    expect(body.temperature).toBe(0.2);
+    expect(body.enable_thinking).toBe(false);
+    expect(body.response_format).toEqual({ type: 'json_object' });
+    expect((body.messages as { role: string }[])[0]!.role).toBe('system');
+    body = bodyJSON(new OpenAIProvider('qwen').request(chat, { model: Catalog.model('qwen3.8-max')!, key: 'qw', profile: 'vision' }))!;
+    expect(body.enable_thinking).toBe(true);
+
+    // each needs its own key, and the stream parser is the OpenAI one
+    for (const kind of ['deepseek', 'kimi', 'qwen'] as const) {
+      expect(() => new OpenAIProvider(kind).request(chat, { model: Catalog.modelFor('fast', kind), profile: 'fast' })).toThrow(`no API key for ${kind}`);
+      expect(Providers.for(kind).kind).toBe(kind);
+      expect(collect(Providers.for(kind), Canned.openai).text).toBe('Hello there');
+    }
+  });
+
   it('serves a local server from its base URL with no key', () => {
     const provider = new OpenAIProvider('local');
     const model = { ...Catalog.local[0]!, id: 'llama3' };
@@ -154,5 +221,12 @@ describe('Catalog', () => {
     expect(Catalog.modelFor('character', 'anthropic').id).toBe('claude-opus-5-5');
     expect(Catalog.modelFor('fast', 'openai').id).toBe('gpt-5-nano');
     expect(Catalog.modelFor('vision', 'local').id, 'local has no vision model; falls back to the only one').toBe('local');
+    expect(Catalog.modelFor('character', 'deepseek').id).toBe('deepseek-v4-pro');
+    expect(Catalog.modelFor('vision', 'deepseek').id, 'V4 Pro has no vision; Flash does').toBe('deepseek-flash');
+    expect(Catalog.modelFor('fast', 'kimi').id, 'no fast tier; the nearest is balanced').toBe('kimi-k2.6');
+    expect(Catalog.modelFor('vision', 'kimi').id).toBe('kimi-k3');
+    expect(Catalog.modelFor('fast', 'qwen').id).toBe('qwen3.8-flash');
+    expect(Catalog.modelFor('vision', 'qwen').id).toBe('qwen3.8-max');
+    expect([...PROVIDER_KINDS]).toEqual(['anthropic', 'openai', 'gemini', 'deepseek', 'kimi', 'qwen', 'local']);
   });
 });

@@ -123,6 +123,73 @@ final class ProviderTests: XCTestCase {
         XCTAssertNil(plain["response_format"])
     }
 
+    func testDeepSeekKimiQwenAreOpenAICompatible() throws {
+        // DeepSeek: its own endpoint, max_tokens, temperature, thinking off for low effort, JSON mode with the schema in the prompt
+        let deepseek = try OpenAIProvider(kind: .deepseek).request(ChatRequest(system: "bush", messages: [.user("sing")], jsonSchema: ["type": "object"]),
+                                                                  call: ProviderCall(model: Catalog.model(id: "deepseek-flash")!, key: "ds", profile: .character))
+        XCTAssertEqual(deepseek.url, OpenAIProvider.deepseekEndpoint)
+        XCTAssertEqual(deepseek.headers["Authorization"], "Bearer ds")
+        var body = deepseek.bodyJSON!
+        XCTAssertEqual(body["model"] as? String, "deepseek-flash")
+        XCTAssertEqual(body["max_tokens"] as? Int, 400)
+        XCTAssertNil(body["max_completion_tokens"])
+        XCTAssertEqual(body["temperature"] as? Double, 0.9)
+        XCTAssertEqual((body["thinking"] as? [String: Any])?["type"] as? String, "disabled")
+        XCTAssertEqual((body["response_format"] as? [String: Any])?["type"] as? String, "json_object")
+        var messages = body["messages"] as! [[String: Any]]
+        XCTAssertEqual(messages[0]["role"] as? String, "system")
+        XCTAssertTrue((messages[0]["content"] as! String).hasPrefix("bush\n\nReply with a single JSON object that matches this JSON schema: {\"type\":\"object\"}"))
+        // high effort turns thinking on
+        body = try OpenAIProvider(kind: .deepseek).request(chat, call: ProviderCall(model: Catalog.model(id: "deepseek-v4-pro")!, key: "ds", profile: .assistant)).bodyJSON!
+        XCTAssertEqual((body["thinking"] as? [String: Any])?["type"] as? String, "enabled")
+        XCTAssertEqual((body["thinking"] as? [String: Any])?["reasoning_effort"] as? String, "high")
+        XCTAssertNil(body["temperature"], "the assistant profile has no temperature")
+        XCTAssertNil(body["response_format"])
+        XCTAssertEqual((body["messages"] as! [[String: Any]]).count, 4)
+
+        // Kimi: max_completion_tokens, no temperature, reasoning_effort on K3 and a thinking switch on K2, json_schema
+        let kimi = try OpenAIProvider(kind: .kimi).request(ChatRequest(messages: [.user("sing")], jsonSchema: ["type": "object"]),
+                                                          call: ProviderCall(model: Catalog.model(id: "kimi-k3")!, key: "mk", profile: .assistant))
+        XCTAssertEqual(kimi.url, OpenAIProvider.kimiEndpoint)
+        XCTAssertEqual(kimi.headers["Authorization"], "Bearer mk")
+        body = kimi.bodyJSON!
+        XCTAssertEqual(body["max_completion_tokens"] as? Int, 4096)
+        XCTAssertNil(body["max_tokens"])
+        XCTAssertNil(body["temperature"])
+        XCTAssertEqual(body["reasoning_effort"] as? String, "high")
+        XCTAssertNil(body["thinking"])
+        XCTAssertEqual((body["response_format"] as? [String: Any])?["type"] as? String, "json_schema")
+        messages = body["messages"] as! [[String: Any]]
+        XCTAssertEqual(messages.count, 1, "no system prompt was added")
+        body = try OpenAIProvider(kind: .kimi).request(chat, call: ProviderCall(model: Catalog.model(id: "kimi-k2.6")!, key: "mk", profile: .character)).bodyJSON!
+        XCTAssertEqual((body["thinking"] as? [String: Any])?["type"] as? String, "disabled")
+        XCTAssertNil(body["reasoning_effort"])
+        XCTAssertNil(body["temperature"], "Kimi fixes the temperature per model")
+
+        // Qwen: the international compatible-mode endpoint, max_tokens, temperature, enable_thinking, JSON mode
+        let qwen = try OpenAIProvider(kind: .qwen).request(ChatRequest(messages: [.user("sing")], jsonSchema: ["type": "object"]),
+                                                          call: ProviderCall(model: Catalog.model(id: "qwen3.8-flash")!, key: "qw", profile: .fast))
+        XCTAssertEqual(qwen.url, OpenAIProvider.qwenEndpoint)
+        XCTAssertEqual(qwen.headers["Authorization"], "Bearer qw")
+        body = qwen.bodyJSON!
+        XCTAssertEqual(body["max_tokens"] as? Int, 1024)
+        XCTAssertEqual(body["temperature"] as? Double, 0.2)
+        XCTAssertEqual(body["enable_thinking"] as? Bool, false)
+        XCTAssertEqual((body["response_format"] as? [String: Any])?["type"] as? String, "json_object")
+        XCTAssertEqual((body["messages"] as! [[String: Any]])[0]["role"] as? String, "system", "the schema needs a system prompt")
+        body = try OpenAIProvider(kind: .qwen).request(chat, call: ProviderCall(model: Catalog.model(id: "qwen3.8-max")!, key: "qw", profile: .vision)).bodyJSON!
+        XCTAssertEqual(body["enable_thinking"] as? Bool, true)
+
+        // each needs its own key, and the stream parser is the OpenAI one
+        for kind in [ProviderKind.deepseek, .kimi, .qwen] {
+            XCTAssertThrowsError(try OpenAIProvider(kind: kind).request(chat, call: ProviderCall(model: Catalog.model(for: .fast, provider: kind), key: nil, profile: .fast))) { error in
+                XCTAssertEqual(error as? TokenXError, .missingKey(kind))
+            }
+            XCTAssertEqual(Providers.provider(for: kind).kind, kind)
+            XCTAssertEqual(collect(Providers.provider(for: kind), body: Canned.openai).text, "Hello there")
+        }
+    }
+
     func testLocalServerUsesBaseURLAndNoKey() throws {
         let provider = OpenAIProvider(kind: .local)
         var model = Catalog.local[0]

@@ -121,6 +121,69 @@ class ProviderTest {
         assertNull(plain["response_format"])
     }
 
+    @Test fun deepSeekKimiQwenAreOpenAICompatible() {
+        // DeepSeek: its own endpoint, max_tokens, temperature, thinking off for low effort, JSON mode with the schema in the prompt
+        val deepseek = OpenAIProvider(ProviderKind.DEEPSEEK).request(ChatRequest(system = "bush", messages = listOf(ChatMessage.user("sing")), jsonSchema = mapOf("type" to "object")),
+            ProviderCall(Catalog.model("deepseek-flash")!!, "ds", profile = Profile.CHARACTER))
+        assertEquals(OpenAIProvider.DEEPSEEK_ENDPOINT, deepseek.url)
+        assertEquals("Bearer ds", deepseek.headers["Authorization"])
+        var body = deepseek.bodyJson!!
+        assertEquals("deepseek-flash", body["model"])
+        assertEquals(400, body.int("max_tokens"))
+        assertNull(body["max_completion_tokens"])
+        assertEquals(0.9, body["temperature"])
+        assertEquals("disabled", body.obj("thinking").str("type"))
+        assertEquals("json_object", body.obj("response_format").str("type"))
+        var messages = body.list("messages")!!
+        assertEquals("system", messages[0].str("role"))
+        assertTrue(messages[0].str("content")!!.startsWith("bush\n\nReply with a single JSON object that matches this JSON schema: {\"type\":\"object\"}"))
+        body = OpenAIProvider(ProviderKind.DEEPSEEK).request(chat, ProviderCall(Catalog.model("deepseek-v4-pro")!!, "ds", profile = Profile.ASSISTANT)).bodyJson!!
+        assertEquals("enabled", body.obj("thinking").str("type"))
+        assertEquals("high", body.obj("thinking").str("reasoning_effort"))
+        assertNull(body["temperature"])
+        assertNull(body["response_format"])
+        assertEquals(4, body.list("messages")!!.size)
+
+        // Kimi: max_completion_tokens, no temperature, reasoning_effort on K3 and a thinking switch on K2, json_schema
+        val kimi = OpenAIProvider(ProviderKind.KIMI).request(ChatRequest(messages = listOf(ChatMessage.user("sing")), jsonSchema = mapOf("type" to "object")),
+            ProviderCall(Catalog.model("kimi-k3")!!, "mk", profile = Profile.ASSISTANT))
+        assertEquals(OpenAIProvider.KIMI_ENDPOINT, kimi.url)
+        assertEquals("Bearer mk", kimi.headers["Authorization"])
+        body = kimi.bodyJson!!
+        assertEquals(4096, body.int("max_completion_tokens"))
+        assertNull(body["max_tokens"])
+        assertNull(body["temperature"])
+        assertEquals("high", body["reasoning_effort"])
+        assertNull(body["thinking"])
+        assertEquals("json_schema", body.obj("response_format").str("type"))
+        assertEquals(1, body.list("messages")!!.size)
+        body = OpenAIProvider(ProviderKind.KIMI).request(chat, ProviderCall(Catalog.model("kimi-k2.6")!!, "mk", profile = Profile.CHARACTER)).bodyJson!!
+        assertEquals("disabled", body.obj("thinking").str("type"))
+        assertNull(body["reasoning_effort"])
+        assertNull(body["temperature"])
+
+        // Qwen: the international compatible-mode endpoint, max_tokens, temperature, enable_thinking, JSON mode
+        val qwen = OpenAIProvider(ProviderKind.QWEN).request(ChatRequest(messages = listOf(ChatMessage.user("sing")), jsonSchema = mapOf("type" to "object")),
+            ProviderCall(Catalog.model("qwen3.8-flash")!!, "qw", profile = Profile.FAST))
+        assertEquals(OpenAIProvider.QWEN_ENDPOINT, qwen.url)
+        assertEquals("Bearer qw", qwen.headers["Authorization"])
+        body = qwen.bodyJson!!
+        assertEquals(1024, body.int("max_tokens"))
+        assertEquals(0.2, body["temperature"])
+        assertEquals(false, body["enable_thinking"])
+        assertEquals("json_object", body.obj("response_format").str("type"))
+        assertEquals("system", body.list("messages")!![0].str("role"))
+        body = OpenAIProvider(ProviderKind.QWEN).request(chat, ProviderCall(Catalog.model("qwen3.8-max")!!, "qw", profile = Profile.VISION)).bodyJson!!
+        assertEquals(true, body["enable_thinking"])
+
+        // each needs its own key, and the stream parser is the OpenAI one
+        for (kind in listOf(ProviderKind.DEEPSEEK, ProviderKind.KIMI, ProviderKind.QWEN)) {
+            try { OpenAIProvider(kind).request(chat, ProviderCall(Catalog.model(Profile.FAST, kind), null, profile = Profile.FAST)); fail() } catch (e: TokenXException.MissingKey) { assertEquals(kind, e.provider) }
+            assertEquals(kind, Providers.provider(kind).kind)
+            assertEquals("Hello there", collect(Providers.provider(kind), Canned.openai).first)
+        }
+    }
+
     @Test fun localServerUsesBaseUrlAndNoKey() {
         val provider = OpenAIProvider(ProviderKind.LOCAL)
         val model = Catalog.local[0].copy(id = "llama3")

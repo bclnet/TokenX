@@ -13,6 +13,12 @@ public enum ProviderKind: String, CaseIterable, Codable {
     case anthropic
     case openai
     case gemini
+    /// DeepSeek's OpenAI-compatible API (api.deepseek.com).
+    case deepseek
+    /// Moonshot's Kimi platform, OpenAI-compatible (api.moonshot.ai).
+    case kimi
+    /// Alibaba Cloud Model Studio's Qwen models, OpenAI-compatible (dashscope-intl.aliyuncs.com).
+    case qwen
     /// An OpenAI-compatible server on the local network (Ollama, LM Studio, vLLM); no key needed.
     case local
 
@@ -21,6 +27,9 @@ public enum ProviderKind: String, CaseIterable, Codable {
         case .anthropic: return "Anthropic"
         case .openai: return "OpenAI"
         case .gemini: return "Google Gemini"
+        case .deepseek: return "DeepSeek"
+        case .kimi: return "Kimi (Moonshot)"
+        case .qwen: return "Qwen (Alibaba)"
         case .local: return "Local server"
         }
     }
@@ -118,6 +127,22 @@ public enum Catalog {
         ModelInfo(provider: .gemini, id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", tier: .balanced, inputPerMillion: 0.3, outputPerMillion: 2.5, contextTokens: 1_000_000),
         ModelInfo(provider: .gemini, id: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash-Lite", tier: .fast, inputPerMillion: 0.1, outputPerMillion: 0.4, contextTokens: 1_000_000),
     ]
+    /// DeepSeek: V4 Pro and Flash at peak rates; only Flash takes images.
+    public static let deepseek: [ModelInfo] = [
+        ModelInfo(provider: .deepseek, id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", tier: .best, inputPerMillion: 1.32, outputPerMillion: 3.96, contextTokens: 1_000_000, vision: false),
+        ModelInfo(provider: .deepseek, id: "deepseek-flash", name: "DeepSeek Flash", tier: .fast, inputPerMillion: 0.30, outputPerMillion: 1.20, contextTokens: 1_000_000),
+    ]
+    /// Kimi (Moonshot): K3 and K2.6; both take images.
+    public static let kimi: [ModelInfo] = [
+        ModelInfo(provider: .kimi, id: "kimi-k3", name: "Kimi K3", tier: .best, inputPerMillion: 3, outputPerMillion: 15, contextTokens: 1_000_000),
+        ModelInfo(provider: .kimi, id: "kimi-k2.6", name: "Kimi K2.6", tier: .balanced, inputPerMillion: 0.95, outputPerMillion: 4, contextTokens: 256_000),
+    ]
+    /// Qwen (Alibaba Cloud Model Studio, international): the 3.8 / 3.7 line, all multimodal, base-tier prices.
+    public static let qwen: [ModelInfo] = [
+        ModelInfo(provider: .qwen, id: "qwen3.8-max", name: "Qwen 3.8 Max", tier: .best, inputPerMillion: 2, outputPerMillion: 6, contextTokens: 1_000_000),
+        ModelInfo(provider: .qwen, id: "qwen3.7-plus", name: "Qwen 3.7 Plus", tier: .balanced, inputPerMillion: 0.4, outputPerMillion: 1.6, contextTokens: 1_000_000),
+        ModelInfo(provider: .qwen, id: "qwen3.8-flash", name: "Qwen 3.8 Flash", tier: .fast, inputPerMillion: 0.15, outputPerMillion: 0.47, contextTokens: 1_000_000),
+    ]
     /// A local server serves whatever model is loaded; the id is the settings' `localModel`.
     public static let local: [ModelInfo] = [
         ModelInfo(provider: .local, id: "local", name: "Local model", tier: .balanced, inputPerMillion: 0, outputPerMillion: 0, contextTokens: 32_000, vision: false),
@@ -128,6 +153,9 @@ public enum Catalog {
         case .anthropic: return anthropic
         case .openai: return openai
         case .gemini: return gemini
+        case .deepseek: return deepseek
+        case .kimi: return kimi
+        case .qwen: return qwen
         case .local: return local
         }
     }

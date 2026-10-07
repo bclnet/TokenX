@@ -7,7 +7,7 @@ wants a summary). Both halves run in the same process; the consumer never
 sees a key, a model name or a vendor.
 
 ```
-  app settings ──► TokenServer ──► Provider (Anthropic | OpenAI | Gemini | local)
+  app settings ──► TokenServer ──► Provider (Anthropic | OpenAI | Gemini | DeepSeek | Kimi | Qwen | local)
   (keys, active     │  store: keys (encrypted), settings, usage
    provider, caps)  │  policy: daily cap, profile → model, cost
                     ▼
@@ -144,13 +144,25 @@ transport.
 | Anthropic | `POST /v1/messages`, `stream: true` | base64 image content blocks | `output_config.format` `{type: json_schema, schema}` | `output_config.effort` from the profile on the 5-generation models; sampling parameters are not sent there. Opus 5.5 and Sonnet 5.5 requests send `anthropic-beta: server-side-fallback-2026-07-01` and `"fallbacks": "default"` |
 | OpenAI | `POST /v1/chat/completions`, `stream: true`, `stream_options.include_usage` | `image_url` data URIs | `response_format` `json_schema` | |
 | Gemini | `POST /v1beta/models/{model}:streamGenerateContent?alt=sse` | `inlineData` parts | `responseMimeType: application/json` | |
+| DeepSeek | `https://api.deepseek.com/chat/completions`, OpenAI-compatible | `image_url` data URIs (Flash only) | `response_format: json_object`, schema appended to the system prompt | `max_tokens`, temperature; the profile's effort sets `thinking` (`disabled` for low, `enabled` + `reasoning_effort` for high) |
+| Kimi (Moonshot) | `https://api.moonshot.ai/v1/chat/completions`, OpenAI-compatible | `image_url` data URIs | `response_format` `json_schema` | `max_completion_tokens`, no temperature (fixed per model); effort sets `reasoning_effort` on K3 and `thinking` on K2 |
+| Qwen (Alibaba) | `https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions`, the shared international Model Studio endpoint | `image_url` data URIs | `response_format: json_object`, schema appended to the system prompt | `max_tokens`, temperature; effort sets `enable_thinking` |
 | local | an OpenAI-compatible server (Ollama, LM Studio, vLLM) at `Settings.localBaseURL`; no key | as OpenAI | as OpenAI | model name from `Settings.localModel` |
+
+DeepSeek, Kimi and Qwen models think by default and bill the reasoning as
+output, so the low-effort profiles (`character`, `fast`) turn thinking off and
+the high-effort ones (`assistant`, `vision`) leave it on.
 
 ### Catalog and profiles
 
 The catalog lists three models per provider by tier (`fast`, `balanced`,
 `best`) with prices for the cost column; for Anthropic these are Claude Opus 5.5
-($4 / $20 per million tokens), Sonnet 5.5 ($2 / $10) and Haiku 4.5 ($1 / $5). A profile asks for a tier; the
+($4 / $20 per million tokens), Sonnet 5.5 ($2 / $10) and Haiku 4.5 ($1 / $5).
+DeepSeek has V4 Pro (best, $1.32 / $3.96 at peak, text only) and Flash (fast,
+$0.30 / $1.20, takes images); Kimi has K3 (best, $3 / $15) and K2.6 (balanced,
+$0.95 / $4); Qwen has 3.8 Max (best, $2 / $6), 3.7 Plus (balanced, $0.40 / $1.60)
+and 3.8 Flash (fast, $0.15 / $0.47), all multimodal. A provider without a tier
+serves the nearest one it has. A profile asks for a tier; the
 active provider's model of that tier serves it (or the nearest tier the
 provider has). Editing the catalog is a code change on purpose: it is the
 opinion TokenX ships with.
@@ -178,12 +190,12 @@ ios/Sources/TokenX        catalog, chat types, transport, providers, store, SQLi
 ios/Sources/TokenXApple   KeychainCipher, TokenXBootstrap.standard(appId:), TokenXModel (ObservableObject)
 ios/Sources/TokenXUI      TokenXSettingsSection, TokenXUsageView, TokenXUsageRow, TokenXRemainingView, TokenXStatusBadge (SwiftUI)
 ios/Sources/CSQLite       sqlite3 module map for Linux
-ios/Tests/TokenXTests     23 tests with a fake transport and an in-memory / temp SQLite store
-android/tokenx-core       Kotlin/JVM mirror (JDBC SQLite for desktop and tests), 23 tests
+ios/Tests/TokenXTests     25 tests with a fake transport and an in-memory / temp SQLite store
+android/tokenx-core       Kotlin/JVM mirror (JDBC SQLite for desktop and tests), 25 tests
 android/tokenx-android    AndroidSqlDatabase, KeystoreCipher, TokenX.standard(context)
 android/tokenx-compose    TokenXModel (Compose state), TokenXSettings, TokenXUsage, TokenXUsageRow, TokenXRemaining, TokenXStatusBadge
 js/                       TypeScript mirror, npm `tokenx`: src/*.ts file for file with ios/Sources/TokenX, fetch transport,
-                          async TokenStore, AesGcmCipher; no UI pieces; 22 vitest tests
+                          async TokenStore, AesGcmCipher; no UI pieces; 24 vitest tests
 ```
 
 | platform | package | secrets |

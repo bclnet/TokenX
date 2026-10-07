@@ -150,6 +150,25 @@ describe('TokenServer', () => {
     expect(row.reply).toBe('Hello there');
   });
 
+  it('serves profiles from the OpenAI-compatible vendors', async () => {
+    transport.responses['api.deepseek.com'] = { status: 200, body: Canned.openai };
+    transport.responses['api.moonshot.ai'] = { status: 200, body: Canned.openai };
+    transport.responses['dashscope-intl.aliyuncs.com'] = { status: 200, body: Canned.openai };
+    for (const [kind, model] of [['deepseek', 'deepseek-v4-pro'], ['kimi', 'kimi-k3'], ['qwen', 'qwen3.8-max']] as const) {
+      await server.activate(kind, `k-${kind}`);
+      expect(await server.isReady()).toBe(true);
+      expect((await server.model('character'))?.id).toBe(model);
+      const reply = await new TokenClient(server).session('bush', 'character').send(request());
+      expect(reply.text).toBe('Hello there');
+      expect(reply.provider).toBe(kind);
+      expect(reply.model).toBe(model);
+      expect(transport.requests.at(-1)?.headers.Authorization).toBe(`Bearer k-${kind}`);
+      expect((await server.recentUsage())[0]!.provider).toBe(kind);
+    }
+    expect(await server.configuredProviders()).toEqual(['deepseek', 'kimi', 'qwen']);
+    expect((await server.usageToday()).requests).toBe(3);
+  });
+
   it('surfaces HTTP errors and charges nothing for them', async () => {
     await server.activate('anthropic', 'k');
     transport.responses['api.anthropic.com'] = { status: 401, body: '{"error":{"message":"invalid x-api-key"}}' };

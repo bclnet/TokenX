@@ -123,6 +123,26 @@ final class ServerTests: XCTestCase {
         XCTAssertEqual(row.reply, "Hello there")
     }
 
+    func testOpenAICompatibleVendorsServeProfiles() throws {
+        transport.responses["api.deepseek.com"] = (200, Canned.openai)
+        transport.responses["api.moonshot.ai"] = (200, Canned.openai)
+        transport.responses["dashscope-intl.aliyuncs.com"] = (200, Canned.openai)
+        for (kind, model) in [(ProviderKind.deepseek, "deepseek-v4-pro"), (.kimi, "kimi-k3"), (.qwen, "qwen3.8-max")] {
+            try server.activate(kind, key: "k-\(kind.rawValue)")
+            XCTAssertTrue(server.isReady)
+            XCTAssertEqual(server.model(for: .character)?.id, model)
+            let (result, _) = stream(TokenClient(broker: server).session(consumer: "bush", profile: .character))
+            let reply = try XCTUnwrap(try result?.get())
+            XCTAssertEqual(reply.text, "Hello there")
+            XCTAssertEqual(reply.provider, kind)
+            XCTAssertEqual(reply.model, model)
+            XCTAssertEqual(transport.requests.last?.headers["Authorization"], "Bearer k-\(kind.rawValue)")
+            XCTAssertEqual(server.recentUsage().first?.provider, kind)
+        }
+        XCTAssertEqual(server.configuredProviders, [.deepseek, .kimi, .qwen])
+        XCTAssertEqual(server.usageToday().requests, 3)
+    }
+
     func testHttpErrorsSurface() throws {
         try server.activate(.anthropic, key: "k")
         transport.responses["api.anthropic.com"] = (401, "{\"error\":{\"message\":\"invalid x-api-key\"}}")
