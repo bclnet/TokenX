@@ -7,7 +7,7 @@ wants a summary). Both halves run in the same process; the consumer never
 sees a key, a model name or a vendor.
 
 ```
-  app settings ──► TokenServer ──► Provider (Anthropic | OpenAI | Gemini | DeepSeek | Kimi | Qwen | local)
+  app settings ──► TokenServer ──► Provider (Anthropic | OpenAI | Gemini | DeepSeek | Kimi | Qwen | Grok | Mistral | Cohere | OpenRouter | local)
   (keys, active     │  store: keys (encrypted), settings, usage
    provider, caps)  │  policy: daily cap, profile → model, cost
                     ▼
@@ -150,11 +150,18 @@ transport.
 | DeepSeek | `https://api.deepseek.com/chat/completions`, OpenAI-compatible | `image_url` data URIs (Flash only) | `response_format: json_object`, schema appended to the system prompt | `max_tokens`, temperature; the profile's effort sets `thinking` (`disabled` for low, `enabled` + `reasoning_effort` for high) |
 | Kimi (Moonshot) | `https://api.moonshot.ai/v1/chat/completions`, OpenAI-compatible | `image_url` data URIs | `response_format` `json_schema` | `max_completion_tokens`, no temperature (fixed per model); effort sets `reasoning_effort` on K3 and `thinking` on K2 |
 | Qwen (Alibaba) | `https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions`, the shared international Model Studio endpoint | `image_url` data URIs | `response_format: json_object`, schema appended to the system prompt | `max_tokens`, temperature; effort sets `enable_thinking` |
+| Grok (xAI) | `https://api.x.ai/v1/chat/completions`, OpenAI-compatible | `image_url` data URIs | `response_format` `json_schema` | `max_tokens`, temperature; Grok 4 always reasons, the effort sets `reasoning_effort` |
+| Mistral | `https://api.mistral.ai/v1/chat/completions`, OpenAI-compatible | `image_url` data URIs | `response_format` `json_schema` | `max_tokens`, temperature; effort sets `reasoning_effort` (`none` or `high`) |
+| Cohere | `https://api.cohere.com/compatibility/v1/chat/completions`, Cohere's OpenAI compatibility API | `image_url` data URIs (Command A+; not documented for the compatibility API) | `response_format: {type: json_object, schema}` | `max_tokens`, temperature; `reasoning_effort` `none` or `high` on Command A+ and the reasoning models; no `stream_options`, usage is estimated when the stream carries none |
+| OpenRouter | `https://openrouter.ai/api/v1/chat/completions`, OpenAI-compatible | `image_url` data URIs | `response_format` `json_schema` | `max_tokens`, no temperature (it depends on the routed model); effort sets `reasoning` `{enabled: false}` or `{effort: high}`; usage comes in the last chunk unasked |
 | local | an OpenAI-compatible server (Ollama, LM Studio, vLLM) at `Settings.localBaseURL`; no key | as OpenAI | as OpenAI | model name from `Settings.localModel` |
 
-DeepSeek, Kimi and Qwen models think by default and bill the reasoning as
-output, so the low-effort profiles (`character`, `fast`) turn thinking off and
-the high-effort ones (`assistant`, `vision`) leave it on.
+The OpenAI-compatible vendors share one provider with a per-vendor dialect:
+endpoint, token parameter, whether a temperature is sent, how usage is asked
+for, how a schema is passed and how reasoning is switched. Models that think
+by default bill the reasoning as output, so the low-effort profiles
+(`character`, `fast`) turn thinking off wherever the vendor allows and the
+high-effort ones (`assistant`, `vision`) leave it on.
 
 ### Catalog and profiles
 
@@ -164,8 +171,14 @@ The catalog lists three models per provider by tier (`fast`, `balanced`,
 DeepSeek has V4 Pro (best, $1.32 / $3.96 at peak, text only) and Flash (fast,
 $0.30 / $1.20, takes images); Kimi has K3 (best, $3 / $15) and K2.6 (balanced,
 $0.95 / $4); Qwen has 3.8 Max (best, $2 / $6), 3.7 Plus (balanced, $0.40 / $1.60)
-and 3.8 Flash (fast, $0.15 / $0.47), all multimodal. A provider without a tier
-serves the nearest one it has. A profile asks for a tier; the
+and 3.8 Flash (fast, $0.15 / $0.47), all multimodal. Grok has 4.7 (best, $2 / $6)
+and 4.3 (fast, $1.25 / $2.50), both with images; Mistral has the `-latest`
+aliases of Large (best, $0.50 / $1.50), Medium (balanced, $1.50 / $7.50) and
+Small (fast, $0.15 / $0.60); Cohere has Command A+ (best, $0.30 / $1.50, images),
+Command A (balanced, $2.50 / $10) and Command R7B (fast, $0.0375 / $0.15);
+OpenRouter carries the Anthropic trio at OpenRouter's prices, so one OpenRouter
+key gives the same opinion. A provider without a tier serves the nearest one it
+has. A profile asks for a tier; the
 active provider's model of that tier serves it (or the nearest tier the
 provider has). Editing the catalog is a code change on purpose: it is the
 opinion TokenX ships with.
@@ -194,12 +207,12 @@ ios/Sources/TokenX        catalog, chat types, transport, providers, store, SQLi
 ios/Sources/TokenXApple   KeychainCipher, TokenXBootstrap.standard(appId:), TokenXModel (ObservableObject)
 ios/Sources/TokenXUI      TokenXSettingsSection, TokenXUsageView, TokenXUsageRow, TokenXRemainingView, TokenXStatusBadge (SwiftUI)
 ios/Sources/CSQLite       sqlite3 module map for Linux
-ios/Tests/TokenXTests     25 tests with a fake transport and an in-memory / temp SQLite store
-android/tokenx-core       Kotlin/JVM mirror (JDBC SQLite for desktop and tests), 25 tests
+ios/Tests/TokenXTests     26 tests with a fake transport and an in-memory / temp SQLite store
+android/tokenx-core       Kotlin/JVM mirror (JDBC SQLite for desktop and tests), 26 tests
 android/tokenx-android    AndroidSqlDatabase, KeystoreCipher, TokenX.standard(context)
 android/tokenx-compose    TokenXModel (Compose state), TokenXSettings, TokenXUsage, TokenXUsageRow, TokenXRemaining, TokenXStatusBadge
 js/                       TypeScript mirror, npm `tokenx`: src/*.ts file for file with ios/Sources/TokenX, fetch transport,
-                          async TokenStore, AesGcmCipher; no UI pieces; 24 vitest tests
+                          async TokenStore, AesGcmCipher; no UI pieces; 25 vitest tests
 ```
 
 | platform | package | secrets |

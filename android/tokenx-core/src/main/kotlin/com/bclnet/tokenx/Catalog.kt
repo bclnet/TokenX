@@ -18,6 +18,14 @@ enum class ProviderKind(val id: String, val displayName: String, val needsKey: B
     KIMI("kimi", "Kimi (Moonshot)"),
     /** Alibaba Cloud Model Studio's Qwen models, OpenAI-compatible (dashscope-intl.aliyuncs.com). */
     QWEN("qwen", "Qwen (Alibaba)"),
+    /** xAI's Grok, OpenAI-compatible (api.x.ai). */
+    GROK("grok", "Grok (xAI)"),
+    /** Mistral's La Plateforme, OpenAI-compatible (api.mistral.ai). */
+    MISTRAL("mistral", "Mistral"),
+    /** Cohere's Command models through its OpenAI compatibility API (api.cohere.com/compatibility). */
+    COHERE("cohere", "Cohere"),
+    /** OpenRouter: many vendors' models behind one key, OpenAI-compatible (openrouter.ai). */
+    OPENROUTER("openrouter", "OpenRouter"),
     /** An OpenAI-compatible server on the local network (Ollama, LM Studio, vLLM); no key needed. */
     LOCAL("local", "Local server", needsKey = false);
 
@@ -100,12 +108,37 @@ object Catalog {
         ModelInfo(ProviderKind.QWEN, "qwen3.7-plus", "Qwen 3.7 Plus", ModelTier.BALANCED, 0.4, 1.6, 1_000_000),
         ModelInfo(ProviderKind.QWEN, "qwen3.8-flash", "Qwen 3.8 Flash", ModelTier.FAST, 0.15, 0.47, 1_000_000),
     )
+    /** xAI: Grok 4.7 and the cheaper Grok 4.3, prices for prompts under 200k tokens; both take images. */
+    val grok = listOf(
+        ModelInfo(ProviderKind.GROK, "grok-4.7", "Grok 4.7", ModelTier.BEST, 2.0, 6.0, 500_000),
+        ModelInfo(ProviderKind.GROK, "grok-4.3", "Grok 4.3", ModelTier.FAST, 1.25, 2.5, 1_000_000),
+    )
+    /** Mistral: the `-latest` aliases of Large 4, Medium 3.5 and Small 4, all multimodal. */
+    val mistral = listOf(
+        ModelInfo(ProviderKind.MISTRAL, "mistral-large-latest", "Mistral Large", ModelTier.BEST, 0.5, 1.5, 512_000),
+        ModelInfo(ProviderKind.MISTRAL, "mistral-medium-latest", "Mistral Medium", ModelTier.BALANCED, 1.5, 7.5, 256_000),
+        ModelInfo(ProviderKind.MISTRAL, "mistral-small-latest", "Mistral Small", ModelTier.FAST, 0.15, 0.6, 256_000),
+    )
+    /** Cohere: Command A+ (images, reasoning), Command A and Command R7B. */
+    val cohere = listOf(
+        ModelInfo(ProviderKind.COHERE, "command-a-plus-05-2026", "Command A+", ModelTier.BEST, 0.3, 1.5, 128_000),
+        ModelInfo(ProviderKind.COHERE, "command-a-03-2025", "Command A", ModelTier.BALANCED, 2.5, 10.0, 256_000, vision = false),
+        ModelInfo(ProviderKind.COHERE, "command-r7b-12-2024", "Command R7B", ModelTier.FAST, 0.0375, 0.15, 128_000, vision = false),
+    )
+    /** OpenRouter: the same opinion as the Anthropic catalog, through one OpenRouter key; prices as OpenRouter lists them. */
+    val openrouter = listOf(
+        ModelInfo(ProviderKind.OPENROUTER, "anthropic/claude-opus-5.5", "Claude Opus 5.5 via OpenRouter", ModelTier.BEST, 4.0, 20.0, 1_000_000),
+        ModelInfo(ProviderKind.OPENROUTER, "anthropic/claude-sonnet-5.5", "Claude Sonnet 5.5 via OpenRouter", ModelTier.BALANCED, 2.0, 10.0, 1_000_000),
+        ModelInfo(ProviderKind.OPENROUTER, "anthropic/claude-haiku-4.5", "Claude Haiku 4.5 via OpenRouter", ModelTier.FAST, 1.0, 5.0, 200_000),
+    )
     /** A local server serves whatever model is loaded; the id is the settings' `localModel`. */
     val local = listOf(ModelInfo(ProviderKind.LOCAL, "local", "Local model", ModelTier.BALANCED, 0.0, 0.0, 32_000, vision = false))
 
     fun models(provider: ProviderKind): List<ModelInfo> = when (provider) {
         ProviderKind.ANTHROPIC -> anthropic; ProviderKind.OPENAI -> openai; ProviderKind.GEMINI -> gemini
-        ProviderKind.DEEPSEEK -> deepseek; ProviderKind.KIMI -> kimi; ProviderKind.QWEN -> qwen; ProviderKind.LOCAL -> local
+        ProviderKind.DEEPSEEK -> deepseek; ProviderKind.KIMI -> kimi; ProviderKind.QWEN -> qwen
+        ProviderKind.GROK -> grok; ProviderKind.MISTRAL -> mistral; ProviderKind.COHERE -> cohere; ProviderKind.OPENROUTER -> openrouter
+        ProviderKind.LOCAL -> local
     }
 
     val all: List<ModelInfo> get() = ProviderKind.entries.flatMap { models(it) }

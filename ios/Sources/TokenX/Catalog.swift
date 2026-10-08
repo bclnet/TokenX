@@ -19,6 +19,14 @@ public enum ProviderKind: String, CaseIterable, Codable {
     case kimi
     /// Alibaba Cloud Model Studio's Qwen models, OpenAI-compatible (dashscope-intl.aliyuncs.com).
     case qwen
+    /// xAI's Grok, OpenAI-compatible (api.x.ai).
+    case grok
+    /// Mistral's La Plateforme, OpenAI-compatible (api.mistral.ai).
+    case mistral
+    /// Cohere's Command models through its OpenAI compatibility API (api.cohere.com/compatibility).
+    case cohere
+    /// OpenRouter: many vendors' models behind one key, OpenAI-compatible (openrouter.ai).
+    case openrouter
     /// An OpenAI-compatible server on the local network (Ollama, LM Studio, vLLM); no key needed.
     case local
 
@@ -30,6 +38,10 @@ public enum ProviderKind: String, CaseIterable, Codable {
         case .deepseek: return "DeepSeek"
         case .kimi: return "Kimi (Moonshot)"
         case .qwen: return "Qwen (Alibaba)"
+        case .grok: return "Grok (xAI)"
+        case .mistral: return "Mistral"
+        case .cohere: return "Cohere"
+        case .openrouter: return "OpenRouter"
         case .local: return "Local server"
         }
     }
@@ -143,6 +155,29 @@ public enum Catalog {
         ModelInfo(provider: .qwen, id: "qwen3.7-plus", name: "Qwen 3.7 Plus", tier: .balanced, inputPerMillion: 0.4, outputPerMillion: 1.6, contextTokens: 1_000_000),
         ModelInfo(provider: .qwen, id: "qwen3.8-flash", name: "Qwen 3.8 Flash", tier: .fast, inputPerMillion: 0.15, outputPerMillion: 0.47, contextTokens: 1_000_000),
     ]
+    /// xAI: Grok 4.7 and the cheaper Grok 4.3, prices for prompts under 200k tokens; both take images.
+    public static let grok: [ModelInfo] = [
+        ModelInfo(provider: .grok, id: "grok-4.7", name: "Grok 4.7", tier: .best, inputPerMillion: 2, outputPerMillion: 6, contextTokens: 500_000),
+        ModelInfo(provider: .grok, id: "grok-4.3", name: "Grok 4.3", tier: .fast, inputPerMillion: 1.25, outputPerMillion: 2.5, contextTokens: 1_000_000),
+    ]
+    /// Mistral: the `-latest` aliases of Large 4, Medium 3.5 and Small 4, all multimodal.
+    public static let mistral: [ModelInfo] = [
+        ModelInfo(provider: .mistral, id: "mistral-large-latest", name: "Mistral Large", tier: .best, inputPerMillion: 0.5, outputPerMillion: 1.5, contextTokens: 512_000),
+        ModelInfo(provider: .mistral, id: "mistral-medium-latest", name: "Mistral Medium", tier: .balanced, inputPerMillion: 1.5, outputPerMillion: 7.5, contextTokens: 256_000),
+        ModelInfo(provider: .mistral, id: "mistral-small-latest", name: "Mistral Small", tier: .fast, inputPerMillion: 0.15, outputPerMillion: 0.6, contextTokens: 256_000),
+    ]
+    /// Cohere: Command A+ (images, reasoning), Command A and Command R7B.
+    public static let cohere: [ModelInfo] = [
+        ModelInfo(provider: .cohere, id: "command-a-plus-05-2026", name: "Command A+", tier: .best, inputPerMillion: 0.3, outputPerMillion: 1.5, contextTokens: 128_000),
+        ModelInfo(provider: .cohere, id: "command-a-03-2025", name: "Command A", tier: .balanced, inputPerMillion: 2.5, outputPerMillion: 10, contextTokens: 256_000, vision: false),
+        ModelInfo(provider: .cohere, id: "command-r7b-12-2024", name: "Command R7B", tier: .fast, inputPerMillion: 0.0375, outputPerMillion: 0.15, contextTokens: 128_000, vision: false),
+    ]
+    /// OpenRouter: the same opinion as the Anthropic catalog, through one OpenRouter key; prices as OpenRouter lists them.
+    public static let openrouter: [ModelInfo] = [
+        ModelInfo(provider: .openrouter, id: "anthropic/claude-opus-5.5", name: "Claude Opus 5.5 via OpenRouter", tier: .best, inputPerMillion: 4, outputPerMillion: 20, contextTokens: 1_000_000),
+        ModelInfo(provider: .openrouter, id: "anthropic/claude-sonnet-5.5", name: "Claude Sonnet 5.5 via OpenRouter", tier: .balanced, inputPerMillion: 2, outputPerMillion: 10, contextTokens: 1_000_000),
+        ModelInfo(provider: .openrouter, id: "anthropic/claude-haiku-4.5", name: "Claude Haiku 4.5 via OpenRouter", tier: .fast, inputPerMillion: 1, outputPerMillion: 5, contextTokens: 200_000),
+    ]
     /// A local server serves whatever model is loaded; the id is the settings' `localModel`.
     public static let local: [ModelInfo] = [
         ModelInfo(provider: .local, id: "local", name: "Local model", tier: .balanced, inputPerMillion: 0, outputPerMillion: 0, contextTokens: 32_000, vision: false),
@@ -156,6 +191,10 @@ public enum Catalog {
         case .deepseek: return deepseek
         case .kimi: return kimi
         case .qwen: return qwen
+        case .grok: return grok
+        case .mistral: return mistral
+        case .cohere: return cohere
+        case .openrouter: return openrouter
         case .local: return local
         }
     }

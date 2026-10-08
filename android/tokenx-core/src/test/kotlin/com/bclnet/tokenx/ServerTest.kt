@@ -131,7 +131,12 @@ class ServerTest {
         transport.responses["api.deepseek.com"] = 200 to Canned.openai
         transport.responses["api.moonshot.ai"] = 200 to Canned.openai
         transport.responses["dashscope-intl.aliyuncs.com"] = 200 to Canned.openai
-        for ((kind, model) in listOf(ProviderKind.DEEPSEEK to "deepseek-v4-pro", ProviderKind.KIMI to "kimi-k3", ProviderKind.QWEN to "qwen3.8-max")) {
+        transport.responses["api.x.ai"] = 200 to Canned.openai
+        transport.responses["api.mistral.ai"] = 200 to Canned.openai
+        transport.responses["api.cohere.com"] = 200 to Canned.openai
+        transport.responses["openrouter.ai"] = 200 to Canned.openai
+        for ((kind, model) in listOf(ProviderKind.DEEPSEEK to "deepseek-v4-pro", ProviderKind.KIMI to "kimi-k3", ProviderKind.QWEN to "qwen3.8-max", ProviderKind.GROK to "grok-4.7",
+                ProviderKind.MISTRAL to "mistral-large-latest", ProviderKind.COHERE to "command-a-plus-05-2026", ProviderKind.OPENROUTER to "anthropic/claude-opus-5.5")) {
             server.activate(kind, "k-${kind.id}")
             assertTrue(server.isReady)
             assertEquals(model, server.model(Profile.CHARACTER)?.id)
@@ -143,8 +148,8 @@ class ServerTest {
             assertEquals("Bearer k-${kind.id}", transport.requests.last().headers["Authorization"])
             assertEquals(kind, server.recentUsage().first().provider)
         }
-        assertEquals(listOf(ProviderKind.DEEPSEEK, ProviderKind.KIMI, ProviderKind.QWEN), server.configuredProviders)
-        assertEquals(3, server.usageToday().requests)
+        assertEquals(listOf(ProviderKind.DEEPSEEK, ProviderKind.KIMI, ProviderKind.QWEN, ProviderKind.GROK, ProviderKind.MISTRAL, ProviderKind.COHERE, ProviderKind.OPENROUTER), server.configuredProviders)
+        assertEquals(7, server.usageToday().requests)
     }
 
     @Test fun httpErrorsSurface() {

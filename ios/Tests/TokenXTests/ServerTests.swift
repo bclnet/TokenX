@@ -127,7 +127,12 @@ final class ServerTests: XCTestCase {
         transport.responses["api.deepseek.com"] = (200, Canned.openai)
         transport.responses["api.moonshot.ai"] = (200, Canned.openai)
         transport.responses["dashscope-intl.aliyuncs.com"] = (200, Canned.openai)
-        for (kind, model) in [(ProviderKind.deepseek, "deepseek-v4-pro"), (.kimi, "kimi-k3"), (.qwen, "qwen3.8-max")] {
+        transport.responses["api.x.ai"] = (200, Canned.openai)
+        transport.responses["api.mistral.ai"] = (200, Canned.openai)
+        transport.responses["api.cohere.com"] = (200, Canned.openai)
+        transport.responses["openrouter.ai"] = (200, Canned.openai)
+        for (kind, model) in [(ProviderKind.deepseek, "deepseek-v4-pro"), (.kimi, "kimi-k3"), (.qwen, "qwen3.8-max"), (.grok, "grok-4.7"),
+                              (.mistral, "mistral-large-latest"), (.cohere, "command-a-plus-05-2026"), (.openrouter, "anthropic/claude-opus-5.5")] {
             try server.activate(kind, key: "k-\(kind.rawValue)")
             XCTAssertTrue(server.isReady)
             XCTAssertEqual(server.model(for: .character)?.id, model)
@@ -139,8 +144,8 @@ final class ServerTests: XCTestCase {
             XCTAssertEqual(transport.requests.last?.headers["Authorization"], "Bearer k-\(kind.rawValue)")
             XCTAssertEqual(server.recentUsage().first?.provider, kind)
         }
-        XCTAssertEqual(server.configuredProviders, [.deepseek, .kimi, .qwen])
-        XCTAssertEqual(server.usageToday().requests, 3)
+        XCTAssertEqual(server.configuredProviders, [.deepseek, .kimi, .qwen, .grok, .mistral, .cohere, .openrouter])
+        XCTAssertEqual(server.usageToday().requests, 7)
     }
 
     func testHttpErrorsSurface() throws {

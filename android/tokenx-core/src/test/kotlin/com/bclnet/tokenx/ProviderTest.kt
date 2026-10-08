@@ -184,6 +184,71 @@ class ProviderTest {
         }
     }
 
+    @Test fun grokMistralCohereOpenRouterAreOpenAICompatible() {
+        val schema = mapOf("type" to "object")
+        val withSchema = ChatRequest(system = "bush", messages = listOf(ChatMessage.user("sing")), jsonSchema = schema)
+
+        // Grok: api.x.ai, max_tokens, temperature, reasoning_effort scaled by the profile, json_schema, usage asked for in the stream
+        val grok = OpenAIProvider(ProviderKind.GROK).request(withSchema, ProviderCall(Catalog.model("grok-4.7")!!, "xk", profile = Profile.CHARACTER))
+        assertEquals(OpenAIProvider.GROK_ENDPOINT, grok.url)
+        assertEquals("Bearer xk", grok.headers["Authorization"])
+        var body = grok.bodyJson!!
+        assertEquals(400, body.int("max_tokens"))
+        assertEquals(0.9, body["temperature"])
+        assertEquals("low", body["reasoning_effort"])
+        assertEquals("json_schema", body.obj("response_format").str("type"))
+        assertEquals(true, body.obj("stream_options")?.get("include_usage"))
+        assertEquals("bush", body.list("messages")!![0].str("content"))
+        body = OpenAIProvider(ProviderKind.GROK).request(chat, ProviderCall(Catalog.model("grok-4.3")!!, "xk", profile = Profile.ASSISTANT)).bodyJson!!
+        assertEquals("high", body["reasoning_effort"])
+
+        // Mistral: api.mistral.ai, reasoning_effort none/high, json_schema
+        val mistral = OpenAIProvider(ProviderKind.MISTRAL).request(withSchema, ProviderCall(Catalog.model("mistral-small-latest")!!, "mk", profile = Profile.FAST))
+        assertEquals(OpenAIProvider.MISTRAL_ENDPOINT, mistral.url)
+        body = mistral.bodyJson!!
+        assertEquals("mistral-small-latest", body["model"])
+        assertEquals(1024, body.int("max_tokens"))
+        assertEquals(0.2, body["temperature"])
+        assertEquals("none", body["reasoning_effort"])
+        assertEquals("json_schema", body.obj("response_format").str("type"))
+        body = OpenAIProvider(ProviderKind.MISTRAL).request(chat, ProviderCall(Catalog.model("mistral-large-latest")!!, "mk", profile = Profile.VISION)).bodyJson!!
+        assertEquals("high", body["reasoning_effort"])
+
+        // Cohere: the compatibility endpoint, the schema inside json_object, reasoning only on the reasoning models, no stream_options
+        val cohere = OpenAIProvider(ProviderKind.COHERE).request(withSchema, ProviderCall(Catalog.model("command-a-plus-05-2026")!!, "ck", profile = Profile.ASSISTANT))
+        assertEquals(OpenAIProvider.COHERE_ENDPOINT, cohere.url)
+        body = cohere.bodyJson!!
+        assertEquals(4096, body.int("max_tokens"))
+        assertNull(body["temperature"])
+        assertEquals("high", body["reasoning_effort"])
+        assertEquals("json_object", body.obj("response_format").str("type"))
+        assertEquals("object", body.obj("response_format").obj("schema").str("type"))
+        assertNull(body["stream_options"])
+        assertEquals("bush", body.list("messages")!![0].str("content"))
+        body = OpenAIProvider(ProviderKind.COHERE).request(chat, ProviderCall(Catalog.model("command-r7b-12-2024")!!, "ck", profile = Profile.CHARACTER)).bodyJson!!
+        assertNull(body["reasoning_effort"])
+        assertEquals(0.9, body["temperature"])
+
+        // OpenRouter: one key for many vendors, no temperature, the unified reasoning object, usage comes unasked
+        val openrouter = OpenAIProvider(ProviderKind.OPENROUTER).request(withSchema, ProviderCall(Catalog.model("anthropic/claude-opus-5.5")!!, "ok", profile = Profile.CHARACTER))
+        assertEquals(OpenAIProvider.OPENROUTER_ENDPOINT, openrouter.url)
+        body = openrouter.bodyJson!!
+        assertEquals("anthropic/claude-opus-5.5", body["model"])
+        assertEquals(400, body.int("max_tokens"))
+        assertNull(body["temperature"])
+        assertEquals(false, body.obj("reasoning")?.get("enabled"))
+        assertNull(body["stream_options"])
+        assertEquals("json_schema", body.obj("response_format").str("type"))
+        body = OpenAIProvider(ProviderKind.OPENROUTER).request(chat, ProviderCall(Catalog.model("anthropic/claude-haiku-4.5")!!, "ok", profile = Profile.ASSISTANT)).bodyJson!!
+        assertEquals("high", body.obj("reasoning").str("effort"))
+
+        for (kind in listOf(ProviderKind.GROK, ProviderKind.MISTRAL, ProviderKind.COHERE, ProviderKind.OPENROUTER)) {
+            try { OpenAIProvider(kind).request(chat, ProviderCall(Catalog.model(Profile.FAST, kind), null, profile = Profile.FAST)); fail() } catch (e: TokenXException.MissingKey) { assertEquals(kind, e.provider) }
+            assertEquals(kind, Providers.provider(kind).kind)
+            assertEquals("Hello there", collect(Providers.provider(kind), Canned.openai).first)
+        }
+    }
+
     @Test fun localServerUsesBaseUrlAndNoKey() {
         val provider = OpenAIProvider(ProviderKind.LOCAL)
         val model = Catalog.local[0].copy(id = "llama3")

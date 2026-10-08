@@ -33,8 +33,9 @@ const reply = await session.stream({ system: persona, messages: [ChatMessage.use
 `docs/TOKENX.md` explains the two halves, the profiles, the store and the
 policy; `docs/INTEGRATION.md` is the step-by-step guide for a project that
 adopts the library. Providers are Anthropic, OpenAI, Google Gemini, DeepSeek, Kimi
-(Moonshot), Qwen (Alibaba Cloud Model Studio) and any OpenAI-compatible local
-server, all over plain HTTPS and server-sent events with no vendor SDKs. Profiles and the model catalog are opinionated code,
+(Moonshot), Qwen (Alibaba Cloud Model Studio), Grok (xAI), Mistral, Cohere,
+OpenRouter and any OpenAI-compatible local server, all over plain HTTPS and
+server-sent events with no vendor SDKs. Profiles and the model catalog are opinionated code,
 not rows; the SQLite database holds only keys, a few settings and usage.
 
 | platform | package | secrets |
@@ -59,9 +60,9 @@ with the consumers (for example JsonMind's `TokenXMindProvider`).
 ## Building
 
 ```
-swift test                                 # Linux (needs libsqlite3-dev) or macOS; 25 tests
-cd android && ./gradlew build              # 25 JVM tests plus the Android and Compose libraries
-cd js && npm ci && npm test                # 24 tests on a fake transport with canned SSE bodies
+swift test                                 # Linux (needs libsqlite3-dev) or macOS; 26 tests
+cd android && ./gradlew build              # 26 JVM tests plus the Android and Compose libraries
+cd js && npm ci && npm test                # 25 tests on a fake transport with canned SSE bodies
 ```
 
 ## License

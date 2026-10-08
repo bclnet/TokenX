@@ -84,6 +84,12 @@ TokenXStatusBadge(ai); TokenXRemaining(ai); TokenXUsage(ai)
 The pieces use platform controls in the host's theme and bring no navigation
 or branding. Call `ai.refresh()` after a request so the usage lines update.
 
+The providers a user can pick, each with its own API key: Anthropic, OpenAI,
+Google Gemini, DeepSeek, Kimi (Moonshot), Qwen (Alibaba Cloud Model Studio),
+Grok (xAI), Mistral, Cohere and OpenRouter; plus `local`, an OpenAI-compatible
+server reached by URL with no key. Which models each one runs, and at what
+price, is the catalog's opinion (see TOKENX.md); the host never chooses.
+
 To draw your own UI instead, everything the pieces use is public on the
 server and the model: `activate(provider, key:)`, `removeKey(for:)`,
 `setLocalServer(url:model:)`, `setCredit(dollars, for:)`, `update { settings in }`,

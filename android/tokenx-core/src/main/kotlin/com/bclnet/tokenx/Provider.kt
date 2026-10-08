@@ -33,8 +33,8 @@ interface ProviderStreamParser {
 object Providers {
     fun provider(kind: ProviderKind): Provider = when (kind) {
         ProviderKind.ANTHROPIC -> AnthropicProvider()
-        ProviderKind.OPENAI, ProviderKind.DEEPSEEK, ProviderKind.KIMI, ProviderKind.QWEN, ProviderKind.LOCAL -> OpenAIProvider(kind)
         ProviderKind.GEMINI -> GeminiProvider()
+        else -> OpenAIProvider(kind)
     }
 }
 

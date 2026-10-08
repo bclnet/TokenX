@@ -190,6 +190,74 @@ final class ProviderTests: XCTestCase {
         }
     }
 
+    func testGrokMistralCohereOpenRouterAreOpenAICompatible() throws {
+        let schema: [String: Any] = ["type": "object"]
+        let withSchema = ChatRequest(system: "bush", messages: [.user("sing")], jsonSchema: schema)
+
+        // Grok: api.x.ai, max_tokens, temperature, reasoning_effort scaled by the profile, json_schema, usage asked for in the stream
+        let grok = try OpenAIProvider(kind: .grok).request(withSchema, call: ProviderCall(model: Catalog.model(id: "grok-4.7")!, key: "xk", profile: .character))
+        XCTAssertEqual(grok.url, OpenAIProvider.grokEndpoint)
+        XCTAssertEqual(grok.headers["Authorization"], "Bearer xk")
+        var body = grok.bodyJSON!
+        XCTAssertEqual(body["max_tokens"] as? Int, 400)
+        XCTAssertEqual(body["temperature"] as? Double, 0.9)
+        XCTAssertEqual(body["reasoning_effort"] as? String, "low")
+        XCTAssertEqual((body["response_format"] as? [String: Any])?["type"] as? String, "json_schema")
+        XCTAssertEqual((body["stream_options"] as? [String: Any])?["include_usage"] as? Bool, true)
+        XCTAssertEqual((body["messages"] as! [[String: Any]])[0]["content"] as? String, "bush", "the schema is enforced, not prompted")
+        body = try OpenAIProvider(kind: .grok).request(chat, call: ProviderCall(model: Catalog.model(id: "grok-4.3")!, key: "xk", profile: .assistant)).bodyJSON!
+        XCTAssertEqual(body["reasoning_effort"] as? String, "high")
+
+        // Mistral: api.mistral.ai, reasoning_effort none/high, json_schema
+        let mistral = try OpenAIProvider(kind: .mistral).request(withSchema, call: ProviderCall(model: Catalog.model(id: "mistral-small-latest")!, key: "mk", profile: .fast))
+        XCTAssertEqual(mistral.url, OpenAIProvider.mistralEndpoint)
+        body = mistral.bodyJSON!
+        XCTAssertEqual(body["model"] as? String, "mistral-small-latest")
+        XCTAssertEqual(body["max_tokens"] as? Int, 1024)
+        XCTAssertEqual(body["temperature"] as? Double, 0.2)
+        XCTAssertEqual(body["reasoning_effort"] as? String, "none")
+        XCTAssertEqual((body["response_format"] as? [String: Any])?["type"] as? String, "json_schema")
+        body = try OpenAIProvider(kind: .mistral).request(chat, call: ProviderCall(model: Catalog.model(id: "mistral-large-latest")!, key: "mk", profile: .vision)).bodyJSON!
+        XCTAssertEqual(body["reasoning_effort"] as? String, "high")
+
+        // Cohere: the compatibility endpoint, the schema inside json_object, reasoning only on the reasoning models, no stream_options
+        let cohere = try OpenAIProvider(kind: .cohere).request(withSchema, call: ProviderCall(model: Catalog.model(id: "command-a-plus-05-2026")!, key: "ck", profile: .assistant))
+        XCTAssertEqual(cohere.url, OpenAIProvider.cohereEndpoint)
+        body = cohere.bodyJSON!
+        XCTAssertEqual(body["max_tokens"] as? Int, 4096)
+        XCTAssertNil(body["temperature"], "the assistant profile has none")
+        XCTAssertEqual(body["reasoning_effort"] as? String, "high")
+        let format = body["response_format"] as! [String: Any]
+        XCTAssertEqual(format["type"] as? String, "json_object")
+        XCTAssertEqual((format["schema"] as? [String: Any])?["type"] as? String, "object")
+        XCTAssertNil(body["stream_options"])
+        XCTAssertEqual((body["messages"] as! [[String: Any]])[0]["content"] as? String, "bush", "the schema travels in response_format, not the prompt")
+        body = try OpenAIProvider(kind: .cohere).request(chat, call: ProviderCall(model: Catalog.model(id: "command-r7b-12-2024")!, key: "ck", profile: .character)).bodyJSON!
+        XCTAssertNil(body["reasoning_effort"], "R7B has no reasoning switch")
+        XCTAssertEqual(body["temperature"] as? Double, 0.9)
+
+        // OpenRouter: one key for many vendors, no temperature, the unified reasoning object, usage comes unasked
+        let openrouter = try OpenAIProvider(kind: .openrouter).request(withSchema, call: ProviderCall(model: Catalog.model(id: "anthropic/claude-opus-5.5")!, key: "ok", profile: .character))
+        XCTAssertEqual(openrouter.url, OpenAIProvider.openrouterEndpoint)
+        body = openrouter.bodyJSON!
+        XCTAssertEqual(body["model"] as? String, "anthropic/claude-opus-5.5")
+        XCTAssertEqual(body["max_tokens"] as? Int, 400)
+        XCTAssertNil(body["temperature"])
+        XCTAssertEqual((body["reasoning"] as? [String: Any])?["enabled"] as? Bool, false)
+        XCTAssertNil(body["stream_options"])
+        XCTAssertEqual((body["response_format"] as? [String: Any])?["type"] as? String, "json_schema")
+        body = try OpenAIProvider(kind: .openrouter).request(chat, call: ProviderCall(model: Catalog.model(id: "anthropic/claude-haiku-4.5")!, key: "ok", profile: .assistant)).bodyJSON!
+        XCTAssertEqual((body["reasoning"] as? [String: Any])?["effort"] as? String, "high")
+
+        for kind in [ProviderKind.grok, .mistral, .cohere, .openrouter] {
+            XCTAssertThrowsError(try OpenAIProvider(kind: kind).request(chat, call: ProviderCall(model: Catalog.model(for: .fast, provider: kind), key: nil, profile: .fast))) { error in
+                XCTAssertEqual(error as? TokenXError, .missingKey(kind))
+            }
+            XCTAssertEqual(Providers.provider(for: kind).kind, kind)
+            XCTAssertEqual(collect(Providers.provider(for: kind), body: Canned.openai).text, "Hello there")
+        }
+    }
+
     func testLocalServerUsesBaseURLAndNoKey() throws {
         let provider = OpenAIProvider(kind: .local)
         var model = Catalog.local[0]

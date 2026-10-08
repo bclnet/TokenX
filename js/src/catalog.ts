@@ -6,7 +6,7 @@
  * Port of TokenX `Catalog.swift`.
  */
 
-export const PROVIDER_KINDS = ['anthropic', 'openai', 'gemini', 'deepseek', 'kimi', 'qwen', 'local'] as const;
+export const PROVIDER_KINDS = ['anthropic', 'openai', 'gemini', 'deepseek', 'kimi', 'qwen', 'grok', 'mistral', 'cohere', 'openrouter', 'local'] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 
 export function providerDisplayName(kind: ProviderKind): string {
@@ -23,6 +23,14 @@ export function providerDisplayName(kind: ProviderKind): string {
       return 'Kimi (Moonshot)';
     case 'qwen':
       return 'Qwen (Alibaba)';
+    case 'grok':
+      return 'Grok (xAI)';
+    case 'mistral':
+      return 'Mistral';
+    case 'cohere':
+      return 'Cohere';
+    case 'openrouter':
+      return 'OpenRouter';
     case 'local':
       return 'Local server';
   }
@@ -152,6 +160,29 @@ export const Catalog = {
     m('qwen', 'qwen3.8-max', 'Qwen 3.8 Max', 'best', 2, 6, 1_000_000),
     m('qwen', 'qwen3.7-plus', 'Qwen 3.7 Plus', 'balanced', 0.4, 1.6, 1_000_000),
     m('qwen', 'qwen3.8-flash', 'Qwen 3.8 Flash', 'fast', 0.15, 0.47, 1_000_000),
+  ] as ModelInfo[],
+  /** xAI: Grok 4.7 and the cheaper Grok 4.3, prices for prompts under 200k tokens; both take images. */
+  grok: [
+    m('grok', 'grok-4.7', 'Grok 4.7', 'best', 2, 6, 500_000),
+    m('grok', 'grok-4.3', 'Grok 4.3', 'fast', 1.25, 2.5, 1_000_000),
+  ] as ModelInfo[],
+  /** Mistral: the `-latest` aliases of Large 4, Medium 3.5 and Small 4, all multimodal. */
+  mistral: [
+    m('mistral', 'mistral-large-latest', 'Mistral Large', 'best', 0.5, 1.5, 512_000),
+    m('mistral', 'mistral-medium-latest', 'Mistral Medium', 'balanced', 1.5, 7.5, 256_000),
+    m('mistral', 'mistral-small-latest', 'Mistral Small', 'fast', 0.15, 0.6, 256_000),
+  ] as ModelInfo[],
+  /** Cohere: Command A+ (images, reasoning), Command A and Command R7B. */
+  cohere: [
+    m('cohere', 'command-a-plus-05-2026', 'Command A+', 'best', 0.3, 1.5, 128_000),
+    m('cohere', 'command-a-03-2025', 'Command A', 'balanced', 2.5, 10, 256_000, false),
+    m('cohere', 'command-r7b-12-2024', 'Command R7B', 'fast', 0.0375, 0.15, 128_000, false),
+  ] as ModelInfo[],
+  /** OpenRouter: the same opinion as the Anthropic catalog, through one OpenRouter key; prices as OpenRouter lists them. */
+  openrouter: [
+    m('openrouter', 'anthropic/claude-opus-5.5', 'Claude Opus 5.5 via OpenRouter', 'best', 4, 20, 1_000_000),
+    m('openrouter', 'anthropic/claude-sonnet-5.5', 'Claude Sonnet 5.5 via OpenRouter', 'balanced', 2, 10, 1_000_000),
+    m('openrouter', 'anthropic/claude-haiku-4.5', 'Claude Haiku 4.5 via OpenRouter', 'fast', 1, 5, 200_000),
   ] as ModelInfo[],
   /** A local server serves whatever model is loaded; the id is the settings' `localModel`. */
   local: [m('local', 'local', 'Local model', 'balanced', 0, 0, 32_000, false)] as ModelInfo[],

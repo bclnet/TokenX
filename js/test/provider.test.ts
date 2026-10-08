@@ -6,11 +6,15 @@ import {
   bodyJSON,
   Catalog,
   ChatMessage,
+  COHERE_ENDPOINT,
   DEEPSEEK_ENDPOINT,
   GeminiProvider,
+  GROK_ENDPOINT,
   KIMI_ENDPOINT,
   LineSplitter,
+  MISTRAL_ENDPOINT,
   OpenAIProvider,
+  OPENROUTER_ENDPOINT,
   PROVIDER_KINDS,
   Providers,
   QWEN_ENDPOINT,
@@ -188,6 +192,70 @@ describe('OpenAIProvider', () => {
     }
   });
 
+  it('serves Grok, Mistral, Cohere and OpenRouter as OpenAI-compatible vendors', () => {
+    const schema = { type: 'object' };
+    const withSchema: ChatRequest = { system: 'bush', messages: [ChatMessage.user('sing')], jsonSchema: schema };
+
+    // Grok: api.x.ai, max_tokens, temperature, reasoning_effort scaled by the profile, json_schema, usage asked for in the stream
+    const grok = new OpenAIProvider('grok').request(withSchema, { model: Catalog.model('grok-4.7')!, key: 'xk', profile: 'character' });
+    expect(grok.url).toBe(GROK_ENDPOINT);
+    expect(grok.headers.Authorization).toBe('Bearer xk');
+    let body = bodyJSON(grok)!;
+    expect(body.max_tokens).toBe(400);
+    expect(body.temperature).toBe(0.9);
+    expect(body.reasoning_effort).toBe('low');
+    expect((body.response_format as { type: string }).type).toBe('json_schema');
+    expect(body.stream_options).toEqual({ include_usage: true });
+    expect((body.messages as { content: string }[])[0]!.content, 'the schema is enforced, not prompted').toBe('bush');
+    body = bodyJSON(new OpenAIProvider('grok').request(chat, { model: Catalog.model('grok-4.3')!, key: 'xk', profile: 'assistant' }))!;
+    expect(body.reasoning_effort).toBe('high');
+
+    // Mistral: api.mistral.ai, reasoning_effort none/high, json_schema
+    const mistral = new OpenAIProvider('mistral').request(withSchema, { model: Catalog.model('mistral-small-latest')!, key: 'mk', profile: 'fast' });
+    expect(mistral.url).toBe(MISTRAL_ENDPOINT);
+    body = bodyJSON(mistral)!;
+    expect(body.model).toBe('mistral-small-latest');
+    expect(body.max_tokens).toBe(1024);
+    expect(body.temperature).toBe(0.2);
+    expect(body.reasoning_effort).toBe('none');
+    expect((body.response_format as { type: string }).type).toBe('json_schema');
+    body = bodyJSON(new OpenAIProvider('mistral').request(chat, { model: Catalog.model('mistral-large-latest')!, key: 'mk', profile: 'vision' }))!;
+    expect(body.reasoning_effort).toBe('high');
+
+    // Cohere: the compatibility endpoint, the schema inside json_object, reasoning only on the reasoning models, no stream_options
+    const cohere = new OpenAIProvider('cohere').request(withSchema, { model: Catalog.model('command-a-plus-05-2026')!, key: 'ck', profile: 'assistant' });
+    expect(cohere.url).toBe(COHERE_ENDPOINT);
+    body = bodyJSON(cohere)!;
+    expect(body.max_tokens).toBe(4096);
+    expect(body.temperature, 'the assistant profile has none').toBeUndefined();
+    expect(body.reasoning_effort).toBe('high');
+    expect(body.response_format).toEqual({ type: 'json_object', schema });
+    expect(body.stream_options).toBeUndefined();
+    expect((body.messages as { content: string }[])[0]!.content, 'the schema travels in response_format, not the prompt').toBe('bush');
+    body = bodyJSON(new OpenAIProvider('cohere').request(chat, { model: Catalog.model('command-r7b-12-2024')!, key: 'ck', profile: 'character' }))!;
+    expect(body.reasoning_effort, 'R7B has no reasoning switch').toBeUndefined();
+    expect(body.temperature).toBe(0.9);
+
+    // OpenRouter: one key for many vendors, no temperature, the unified reasoning object, usage comes unasked
+    const openrouter = new OpenAIProvider('openrouter').request(withSchema, { model: Catalog.model('anthropic/claude-opus-5.5')!, key: 'ok', profile: 'character' });
+    expect(openrouter.url).toBe(OPENROUTER_ENDPOINT);
+    body = bodyJSON(openrouter)!;
+    expect(body.model).toBe('anthropic/claude-opus-5.5');
+    expect(body.max_tokens).toBe(400);
+    expect(body.temperature).toBeUndefined();
+    expect(body.reasoning).toEqual({ enabled: false });
+    expect(body.stream_options).toBeUndefined();
+    expect((body.response_format as { type: string }).type).toBe('json_schema');
+    body = bodyJSON(new OpenAIProvider('openrouter').request(chat, { model: Catalog.model('anthropic/claude-haiku-4.5')!, key: 'ok', profile: 'assistant' }))!;
+    expect(body.reasoning).toEqual({ effort: 'high' });
+
+    for (const kind of ['grok', 'mistral', 'cohere', 'openrouter'] as const) {
+      expect(() => new OpenAIProvider(kind).request(chat, { model: Catalog.modelFor('fast', kind), profile: 'fast' })).toThrow(`no API key for ${kind}`);
+      expect(Providers.for(kind).kind).toBe(kind);
+      expect(collect(Providers.for(kind), Canned.openai).text).toBe('Hello there');
+    }
+  });
+
   it('serves a local server from its base URL with no key', () => {
     const provider = new OpenAIProvider('local');
     const model = { ...Catalog.local[0]!, id: 'llama3' };
@@ -227,6 +295,14 @@ describe('Catalog', () => {
     expect(Catalog.modelFor('vision', 'kimi').id).toBe('kimi-k3');
     expect(Catalog.modelFor('fast', 'qwen').id).toBe('qwen3.8-flash');
     expect(Catalog.modelFor('vision', 'qwen').id).toBe('qwen3.8-max');
-    expect([...PROVIDER_KINDS]).toEqual(['anthropic', 'openai', 'gemini', 'deepseek', 'kimi', 'qwen', 'local']);
+    expect(Catalog.modelFor('fast', 'grok').id).toBe('grok-4.3');
+    expect(Catalog.modelFor('vision', 'grok').id).toBe('grok-4.7');
+    expect(Catalog.modelFor('character', 'mistral').id).toBe('mistral-large-latest');
+    expect(Catalog.modelFor('fast', 'mistral').id).toBe('mistral-small-latest');
+    expect(Catalog.modelFor('vision', 'cohere').id).toBe('command-a-plus-05-2026');
+    expect(Catalog.modelFor('fast', 'cohere').id).toBe('command-r7b-12-2024');
+    expect(Catalog.modelFor('character', 'openrouter').id).toBe('anthropic/claude-opus-5.5');
+    expect(Catalog.modelFor('fast', 'openrouter').id).toBe('anthropic/claude-haiku-4.5');
+    expect([...PROVIDER_KINDS]).toEqual(['anthropic', 'openai', 'gemini', 'deepseek', 'kimi', 'qwen', 'grok', 'mistral', 'cohere', 'openrouter', 'local']);
   });
 });
